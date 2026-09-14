@@ -45,7 +45,32 @@ New-Item -ItemType Directory -Path "$scriptsPath\Startup" -Force | Out-Null
 "@ | Out-File "$scriptsPath\scripts.ini" -Encoding Unicode
 
 Write-Host "Computer Startup script registered in GPO '$GpoName'." -ForegroundColor Green
-Write-Host "IMPORTANT: open Group Policy Management, edit '$GpoName' > Computer Configuration > Policies > Windows Settings > Scripts > Startup once, click OK without changes - this forces Windows to re-read scripts.ini and pick it up. (A GPMC quirk; the file alone is sometimes not enough until the GPO is touched once.)" -ForegroundColor Yellow
+
+# Writing scripts.ini into SYSVOL alone does NOT tell clients this GPO has a
+# Computer Startup script - same "silently skipped, nothing in gpresult"
+# failure as the Drive Maps / login-splash GPOs elsewhere in this toolkit.
+# Register the legacy Scripts CSE on the MACHINE side (gPCMachineExtensionNames,
+# not gPCUserExtensionNames - this is a startup script, not a logon script)
+# and bump the GPO version so already-booted machines pick it up.
+Write-Host "Registering the Scripts extension on the GPO..." -ForegroundColor Cyan
+$scriptsExtensionPair = "[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]"
+$gpoAdPath = "CN=Policies,CN=System,$domainDN"
+$gpoAdObject = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase $gpoAdPath -Properties gPCMachineExtensionNames, versionNumber
+if ($gpoAdObject) {
+    $currentExt = $gpoAdObject.gPCMachineExtensionNames
+    if (-not $currentExt -or $currentExt -notlike "*42B5FAAE*") {
+        Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ gPCMachineExtensionNames = "$currentExt$scriptsExtensionPair" }
+        $newVersion = [int]$gpoAdObject.versionNumber + 65537   # bumps both the user and machine version halves
+        Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ versionNumber = $newVersion }
+        $gptIniPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\gpt.ini"
+        (Get-Content $gptIniPath) -replace '^Version=\d+', "Version=$newVersion" | Set-Content $gptIniPath
+        Write-Host "  Scripts extension registered, GPO version bumped to $newVersion so it gets reprocessed." -ForegroundColor Green
+    } else {
+        Write-Host "  Scripts extension already registered." -ForegroundColor Green
+    }
+} else {
+    Write-Host "  Could not find the GPO's AD object to register the extension - the startup script will NOT run until this is done. Investigate manually in ADSI Edit: CN=Policies,CN=System,$domainDN, find the GPO by displayName, add $scriptsExtensionPair to gPCMachineExtensionNames." -ForegroundColor Red
+}
 
 # ---- Backup: Scheduled Task that also runs at any user logon ----
 # Deployed via GPO Preferences > Scheduled Tasks would need GPMC too, so

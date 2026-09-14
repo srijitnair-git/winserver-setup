@@ -138,11 +138,11 @@ foreach ($d in $Departments) {
 }
 
 # ---- Users ----
-# Temporary shared password for initial rollout (config.json Domain.TemporaryUserPassword) -
-# ChangePasswordAtLogon forces everyone onto their own password at first login.
+# Temporary shared password for initial rollout, typed in here rather than
+# stored in config.json - ChangePasswordAtLogon forces everyone onto their
+# own password at first login anyway, so it only needs to exist for one day.
 Write-Host "Creating users..." -ForegroundColor Cyan
-$tempPassword = $Config.Domain.TemporaryUserPassword
-$secureTempPwd = ConvertTo-SecureString $tempPassword -AsPlainText -Force
+$secureTempPwd = Read-Host "Enter the shared temporary password for new user accounts" -AsSecureString
 foreach ($u in $Users) {
     if (-not (Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue)) {
         New-ADUser -Name $u.Name -SamAccountName $u.Sam -UserPrincipalName "$($u.Sam)@DF.local" `
@@ -152,7 +152,7 @@ foreach ($u in $Users) {
         Add-ADGroupMember -Identity $g -Members $u.Sam -ErrorAction SilentlyContinue
     }
 }
-Write-Host "All new users created with the shared temporary password from config.json - each is forced to set their own at first login." -ForegroundColor Yellow
+Write-Host "All new users created with the shared temporary password just entered - each is forced to set their own at first login." -ForegroundColor Yellow
 
 # ---- Workstation folder tree: Personal (per-user) + Systems (per-PC) ----
 # Runs AFTER user creation above, since the ACL grants below need the AD

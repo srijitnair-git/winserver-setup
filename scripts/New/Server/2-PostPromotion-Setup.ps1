@@ -32,9 +32,6 @@ $OUs = @("Domech", "Domech\Users", "Domech\Computers", "Domech\Groups", "Domech\
 foreach ($ou in $OUs) {
     $parts = $ou -split '\\'
     $name = $parts[-1]
-    $parentPath = if ($parts.Count -gt 1) {
-        "OU=" + (($parts[0..($parts.Count-2)] | Select-Object -Last 1)) + "," + $domainDN
-    } else { $domainDN }
     $path = if ($parts.Count -eq 1) { $domainDN } else { "OU=$($parts[$parts.Count-2]),$domainDN" }
     if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$name'" -SearchBase $domainDN -ErrorAction SilentlyContinue)) {
         New-ADOrganizationalUnit -Name $name -Path $path -ProtectedFromAccidentalDeletion $true
@@ -42,16 +39,9 @@ foreach ($ou in $OUs) {
     }
 }
 
-# ---- Security groups ----
-Write-Host "Creating security groups..." -ForegroundColor Cyan
-$groupsOU = "OU=Groups,OU=Domech,$domainDN"
-$Groups = @("GG-AllStaff", "GG-Accounts", "GG-Tally", "GG-Admins", "GG-PrintUsers")
-foreach ($g in $Groups) {
-    if (-not (Get-ADGroup -Filter "Name -eq '$g'" -ErrorAction SilentlyContinue)) {
-        New-ADGroup -Name $g -GroupScope Global -GroupCategory Security -Path $groupsOU
-        Write-Host "  Created group: $g"
-    }
-}
+# Department/staff security groups (Common, Accounts, Tally, Workstation, etc.)
+# are created later by Setup-DFLocal-Full.ps1 from config.json's Departments
+# list - not here, so there's one source of truth for group names.
 
 # ---- Password policy ----
 Write-Host "Setting default domain password policy..." -ForegroundColor Cyan

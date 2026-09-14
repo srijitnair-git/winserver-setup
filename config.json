@@ -2,9 +2,7 @@
   "Domain": {
     "Name": "DF.local",
     "NetbiosName": "DF",
-    "AdminUser": "DF\\Administrator",
-    "TemporaryUserPassword": "Domech@2026!",
-    "_comment_tempPassword": "Shared for initial rollout only - ChangePasswordAtLogon is enforced so everyone is forced to set their own at first login. Meant for one day; remove/rotate after."
+    "AdminUser": "DF\\Administrator"
   },
   "Paths": {
     "DataRoot": "D:\\Domech",

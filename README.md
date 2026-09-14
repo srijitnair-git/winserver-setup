@@ -4,11 +4,14 @@ Config-driven PowerShell toolkit for building/managing a Windows Server AD domai
 
 ## What's in this repo vs. what isn't
 
-This repo is the **code only**. Three things are deliberately excluded (see `.gitignore`) because they're site-specific, not portable:
+`config.json` (site names/IPs/paths/users) and `Assets/` (branding images and
+fonts) ARE tracked in this repo — only `Logs/` and `Scratch/` (generated at
+runtime) are excluded via `.gitignore`. `config.json` holds no secrets: the
+shared temporary password for new-user rollout is typed in interactively
+when `Setup-DFLocal-Full.ps1` runs, never stored on disk or in git.
 
-- `config.json` — every name/IP/path/user this toolkit acts on
-- `Assets/` — branding images and fonts (wallpaper, lock screen, login splash)
-- `Logs/`, `Scratch/` — generated at runtime
+This repo is public - don't add secrets (passwords, API keys) to config.json
+or anywhere else in this folder.
 
 ## First-time setup on a new server
 
@@ -16,18 +19,9 @@ This repo is the **code only**. Three things are deliberately excluded (see `.gi
 git clone https://github.com/srijitnair-git/winserver-setup.git C:\01_matrix
 ```
 
-This gives you `Domech-Menu.bat`, `scripts\`, and everything else — **except** `config.json` and `Assets\`, which don't exist in the repo. Copy those in from wherever you keep them (USB, another share) so you end up with:
-
-```
-C:\01_matrix\
-  Domech-Menu.bat   <- from git clone
-  scripts\          <- from git clone
-  config.json       <- copy in separately
-  Assets\           <- copy in separately
-  Logs\             <- created automatically on first run
-```
-
-Edit `config.json` for this site (domain name, workstation IPs, users, etc.), then run `Domech-Menu.bat`.
+This gives you `Domech-Menu.bat`, `scripts\`, `config.json`, and `Assets\` —
+everything needed to run. Review `config.json` for this site (domain name,
+workstation IPs, users, etc.) before running anything, then run `Domech-Menu.bat`.
 
 ## Getting future script updates
 
