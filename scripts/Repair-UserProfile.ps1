@@ -20,7 +20,12 @@ applets, Open/Save dialogs, installers and browser downloads simultaneously.
 SAFE TO RUN AS ANYONE: a value is only reset if its current target is
 actually unreachable. Normal staff accounts point at a share that works, so
 theirs are reported and left alone.
+
+Use -Force to reset all four to local folders no matter what they currently
+point at - for an admin account that should never be redirected anywhere.
 #>
+
+param([switch]$Force)
 
 $folders = [ordered]@{
     "Desktop"                                = "Desktop"
@@ -54,6 +59,9 @@ foreach ($name in $folders.Keys) {
     if (-not $current) {
         Write-Line "$leaf : no value set - restoring local default." -Level Warning
     }
+    elseif ($Force) {
+        Write-Line "$leaf : currently -> $([Environment]::ExpandEnvironmentVariables($current)) - forcing back to local." -Level Warning
+    }
     else {
         $expanded = [Environment]::ExpandEnvironmentVariables($current)
         Write-Line "$leaf : currently -> $expanded" -Level Info
@@ -71,8 +79,16 @@ foreach ($name in $folders.Keys) {
     New-Item -Path $shellKey     -Force -ErrorAction SilentlyContinue | Out-Null
     Set-ItemProperty -Path $userShellKey -Name $name -Value "%USERPROFILE%\$leaf" -Type ExpandString
     Set-ItemProperty -Path $shellKey     -Name $name -Value $localDefault         -Type String
-    Write-Line "$leaf : reset to $localDefault" -Level Success
-    $fixed++
+
+    # Read back rather than trusting the write - this is the value that decides
+    # whether Explorer works, so it is worth proving it landed.
+    $after = (Get-ItemProperty -Path $userShellKey -Name $name -ErrorAction SilentlyContinue).$name
+    if ($after -eq "%USERPROFILE%\$leaf") {
+        Write-Line "$leaf : reset to $localDefault" -Level Success
+        $fixed++
+    } else {
+        Write-Line "$leaf : WRITE FAILED - still reads '$after'. Tell your admin; this needs fixing by hand in regedit at $userShellKey" -Level Error
+    }
 }
 
 # ---- 2. C: drive restriction ----

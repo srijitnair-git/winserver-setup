@@ -135,7 +135,7 @@ while ($true) {
         '5'  { Invoke-Toolkit $setup -Arguments @('-Only','DriveMaps')              -NeedsElevation }
         '6'  { Invoke-Toolkit 'scripts\New\Server\Remove-OldSalaryPurchaseFolders.ps1' -NeedsElevation }
         '7'  { Invoke-Toolkit 'scripts\New\Server\Repair-DFLocal-Full.ps1'          -NeedsElevation }
-        '8'  { Invoke-Toolkit 'scripts\Repair-UserProfile.ps1' }
+        '8'  { Invoke-Toolkit 'scripts\Repair-UserProfile.ps1' -Arguments @('-Force') }
         '9'  { Invoke-Toolkit 'scripts\New\Workstation\Repair-Workstation.ps1' }
         '10' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-DriveMapping.ps1' }
         '0'  { return }
