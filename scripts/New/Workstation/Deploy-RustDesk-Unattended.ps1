@@ -74,8 +74,8 @@ $deployScript = {
 Write-Host "Deploying RustDesk unattended access to $($ComputerName -join ', ')..." -ForegroundColor Cyan
 $results = Invoke-Command -ComputerName $ComputerName -ScriptBlock $deployScript -ArgumentList $PermanentPassword,$RendezvousServer
 
-$results | Out-File "C:\01_matrix\Scratch\RustDeskIDs.txt"
-Write-Host "`nDone. RustDesk IDs written to C:\01_matrix\Scratch\RustDeskIDs.txt." -ForegroundColor Green
+$results | Out-File "$($Config.Paths.ScratchRoot)\RustDeskIDs.txt"
+Write-Host "`nDone. RustDesk IDs written to $($Config.Paths.ScratchRoot)\RustDeskIDs.txt." -ForegroundColor Green
 Write-Host "IMPORTANT - do these two things manually, once, per machine (or via the GUI 'Export Config' / 'Import Config' feature to standardize):" -ForegroundColor Yellow
 Write-Host "  1. In RustDesk Settings > Security: set Verification Method to 'Use permanent password only' and disable temporary password." -ForegroundColor Yellow
 Write-Host "  2. Confirm the machine still shows Enabled under 'Unattended Access' after this - some versions require the settings step above before permanent-password access actually works without a click-to-approve." -ForegroundColor Yellow

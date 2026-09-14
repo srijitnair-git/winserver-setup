@@ -32,8 +32,8 @@ $results = foreach ($pc in $ComputerName) {
 }
 
 $results | Format-Table -AutoSize
-$results | Export-Csv "C:\01_matrix\Scratch\WorkstationConnectivity.csv" -NoTypeInformation
-Write-Host "`nSaved to C:\01_matrix\Scratch\WorkstationConnectivity.csv" -ForegroundColor Cyan
+$results | Export-Csv "$($Config.Paths.ScratchRoot)\WorkstationConnectivity.csv" -NoTypeInformation
+Write-Host "`nSaved to $($Config.Paths.ScratchRoot)\WorkstationConnectivity.csv" -ForegroundColor Cyan
 
 $failed = $results | Where-Object { -not $_.WinRM_OK }
 if ($failed) {

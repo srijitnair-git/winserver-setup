@@ -62,5 +62,13 @@ function Initialize-DomechContext {
     }
     $logRoot = if ($config.Paths -and $config.Paths.LogsRoot) { $config.Paths.LogsRoot } else { "C:\01_matrix\Logs" }
     Start-DomechLog -ScriptName $ScriptName -LogRoot $logRoot
+
+    # Several scripts write one-off output files (passwords, CSVs, exports)
+    # straight into Scratch without creating it first - Add-Content/Export-Csv
+    # don't create missing parent folders themselves. Guarantee it exists here
+    # once, rather than repeating a New-Item in every script that uses it.
+    $scratchRoot = if ($config.Paths -and $config.Paths.ScratchRoot) { $config.Paths.ScratchRoot } else { "C:\01_matrix\Scratch" }
+    New-Item -ItemType Directory -Path $scratchRoot -Force -ErrorAction SilentlyContinue | Out-Null
+
     return $config
 }

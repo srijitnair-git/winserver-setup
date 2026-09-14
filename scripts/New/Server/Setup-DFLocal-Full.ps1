@@ -132,13 +132,13 @@ foreach ($u in $Users) {
         $securePwd = ConvertTo-SecureString $randomPwd -AsPlainText -Force
         New-ADUser -Name $u.Name -SamAccountName $u.Sam -UserPrincipalName "$($u.Sam)@DF.local" `
             -Path $usersOU -AccountPassword $securePwd -Enabled $true -ChangePasswordAtLogon $true
-        Add-Content -Path "C:\01_matrix\Scratch\NewUserPasswords.txt" -Value "$($u.Sam): $randomPwd"
+        Add-Content -Path "$($Config.Paths.ScratchRoot)\NewUserPasswords.txt" -Value "$($u.Sam): $randomPwd"
     }
     foreach ($g in $u.Groups) {
         Add-ADGroupMember -Identity $g -Members $u.Sam -ErrorAction SilentlyContinue
     }
 }
-Write-Host "Initial passwords written to C:\01_matrix\Scratch\NewUserPasswords.txt - hand these out securely and delete the file after." -ForegroundColor Yellow
+Write-Host "Initial passwords written to $($Config.Paths.ScratchRoot)\NewUserPasswords.txt - hand these out securely and delete the file after." -ForegroundColor Yellow
 
 # ---- Workstation folder tree: Personal (per-user) + Systems (per-PC) ----
 # Runs AFTER user creation above, since the ACL grants below need the AD
