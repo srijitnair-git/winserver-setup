@@ -125,20 +125,21 @@ foreach ($d in $Departments) {
 }
 
 # ---- Users ----
+# Temporary shared password for initial rollout (config.json Domain.TemporaryUserPassword) -
+# ChangePasswordAtLogon forces everyone onto their own password at first login.
 Write-Host "Creating users..." -ForegroundColor Cyan
+$tempPassword = $Config.Domain.TemporaryUserPassword
+$secureTempPwd = ConvertTo-SecureString $tempPassword -AsPlainText -Force
 foreach ($u in $Users) {
     if (-not (Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue)) {
-        $randomPwd = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 16 | ForEach-Object {[char]$_})
-        $securePwd = ConvertTo-SecureString $randomPwd -AsPlainText -Force
         New-ADUser -Name $u.Name -SamAccountName $u.Sam -UserPrincipalName "$($u.Sam)@DF.local" `
-            -Path $usersOU -AccountPassword $securePwd -Enabled $true -ChangePasswordAtLogon $true
-        Add-Content -Path "$($Config.Paths.ScratchRoot)\NewUserPasswords.txt" -Value "$($u.Sam): $randomPwd"
+            -Path $usersOU -AccountPassword $secureTempPwd -Enabled $true -ChangePasswordAtLogon $true
     }
     foreach ($g in $u.Groups) {
         Add-ADGroupMember -Identity $g -Members $u.Sam -ErrorAction SilentlyContinue
     }
 }
-Write-Host "Initial passwords written to $($Config.Paths.ScratchRoot)\NewUserPasswords.txt - hand these out securely and delete the file after." -ForegroundColor Yellow
+Write-Host "All new users created with the shared temporary password from config.json - each is forced to set their own at first login." -ForegroundColor Yellow
 
 # ---- Workstation folder tree: Personal (per-user) + Systems (per-PC) ----
 # Runs AFTER user creation above, since the ACL grants below need the AD
