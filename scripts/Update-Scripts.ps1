@@ -8,7 +8,8 @@ the branch as a zip if git isn't installed.
 #>
 
 . "$PSScriptRoot\DomechCommon.ps1"
-$Config = Get-Content "$PSScriptRoot\..\config.json" -Raw | ConvertFrom-Json
+$RepoRoot = Split-Path $PSScriptRoot -Parent   # .git, Domech-Menu.bat, and config.json live here - NOT inside scripts\
+$Config = Get-Content "$RepoRoot\config.json" -Raw | ConvertFrom-Json
 Start-DomechLog -ScriptName $MyInvocation.MyCommand.Name -LogRoot $Config.Paths.LogsRoot
 
 $repoUrl = $Config.GitHubRepo.Url
@@ -20,9 +21,9 @@ if (-not $repoUrl -or $repoUrl -like "*YOUR-ORG*") {
 
 $gitAvailable = (Get-Command git -ErrorAction SilentlyContinue) -ne $null
 
-if ($gitAvailable -and (Test-Path "$PSScriptRoot\.git")) {
-    Write-DomechLog "Running git pull in $PSScriptRoot ..." -Level Info
-    Push-Location $PSScriptRoot
+if ($gitAvailable -and (Test-Path "$RepoRoot\.git")) {
+    Write-DomechLog "Running git pull in $RepoRoot ..." -Level Info
+    Push-Location $RepoRoot
     $output = git pull origin $branch 2>&1
     Pop-Location
     Write-DomechLog ($output -join "`n") -Level Info
@@ -34,7 +35,7 @@ elseif ($gitAvailable) {
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     git clone --branch $branch $repoUrl $tmp 2>&1 | ForEach-Object { Write-DomechLog $_ -Level Info }
     if (Test-Path $tmp) {
-        Copy-Item "$tmp\*" $PSScriptRoot -Recurse -Force -Exclude "config.json"
+        Copy-Item "$tmp\*" $RepoRoot -Recurse -Force -Exclude "config.json"
         Remove-Item $tmp -Recurse -Force
         Write-DomechLog "Scripts updated via fresh git clone." -Level Success
     } else {
@@ -52,7 +53,7 @@ else {
         Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
         Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
         $innerFolder = Get-ChildItem $extractPath -Directory | Select-Object -First 1
-        Copy-Item "$($innerFolder.FullName)\*" $PSScriptRoot -Recurse -Force
+        Copy-Item "$($innerFolder.FullName)\*" $RepoRoot -Recurse -Force -Exclude "config.json"
         Remove-Item $zipPath, $extractPath -Recurse -Force -ErrorAction SilentlyContinue
         Write-DomechLog "Scripts updated via zip download." -Level Success
     } catch {

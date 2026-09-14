@@ -128,6 +128,7 @@ echo   4. Post-promotion setup (Step 2 - DNS/OUs/groups/hardening)
 echo   5. Full DF.local setup (users, shares, ACLs, drive maps, branding)
 echo   6. Deploy "Ensure Required Services" GPO (startup + logon task)
 echo   7. Restrict C: drive access for standard users (D: + user folders only)
+echo   8. RUN FULL REPAIR (updates scripts, cleans stale folders, runs 5+6+7 in order - use this)
 echo   0. Back
 echo.
 set /p c="Choose an option: "
@@ -139,6 +140,7 @@ if "%c%"=="4" call :run "New\Server\2-PostPromotion-Setup.ps1"
 if "%c%"=="5" call :run "New\Server\Setup-DFLocal-Full.ps1"
 if "%c%"=="6" call :run "New\Server\Deploy-EnsureServicesGPO.ps1"
 if "%c%"=="7" call :run "New\Server\Restrict-CDriveAccess.ps1"
+if "%c%"=="8" call :run "New\Server\Repair-DFLocal-Full.ps1"
 if "%c%"=="0" goto newmenu
 goto newserver
 
