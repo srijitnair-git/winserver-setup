@@ -1,7 +1,9 @@
 <#
 Domech Fabricators - DF.local forest promotion (Step 1)
 Run as local Administrator on the fresh Server 2019 SSD.
-No D: drive exists yet - NTDS/SYSVOL go on C:. Reboots automatically at the end.
+Requires D: to already exist and be healthy - run 0-Prepare-DataDrive.ps1
+first. NTDS/SYSVOL go on D:, per the original design (keeps the AD
+database off the OS volume). Reboots automatically at the end.
 #>
 
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
@@ -13,9 +15,14 @@ Start-DomechLog -ScriptName $MyInvocation.MyCommand.Name -LogRoot $Config.Paths.
 
 $DomainName  = $Config.Domain.Name
 $NetbiosName = $Config.Domain.NetbiosName
-$DbPath      = "C:\Windows\NTDS"
-$LogPath     = "C:\Windows\NTDS"
-$SysvolPath  = "C:\Windows\SYSVOL"
+$DbPath      = "D:\NTDS"
+$LogPath     = "D:\NTDS"
+$SysvolPath  = "D:\SYSVOL"
+
+if (-not (Test-Path "D:\")) {
+    Write-DomechLog "D: does not exist yet - run 0-Prepare-DataDrive.ps1 first." -Level Error
+    exit 1
+}
 
 Write-Host "Installing AD DS role..." -ForegroundColor Cyan
 Install-WindowsFeature AD-Domain-Services -IncludeManagementTools
