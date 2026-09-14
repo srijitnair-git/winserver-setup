@@ -9,11 +9,14 @@ it walks back up to the root to read config.json for the domain name.
 
 Sequence per machine:
   1. Format Windows (done manually / via install media - not scripted here)
-  2. Run THIS script locally - joins DF.local, enables WinRM
+  2. Run THIS script locally - sets static IP + DNS, joins DF.local, enables WinRM
   3. From the server: run the fleet scripts against this one machine
      (software baseline, RustDesk, ensure-services)
   4. GPOs (drive maps, wallpaper, lock screen, ensure-services) apply
      automatically on next login/reboot - nothing else to do
+
+Requires this machine's hostname to already have an IP assigned in
+config.json's Network.WorkstationIPs - add it there before running.
 #>
 
 param(
@@ -29,6 +32,9 @@ $Config = Get-Content "$RepoRoot\config.json" -Raw | ConvertFrom-Json
 Start-DomechLog -ScriptName $MyInvocation.MyCommand.Name -LogRoot $Config.Paths.LogsRoot
 if (-not $DomainUserForJoin) { $DomainUserForJoin = $Config.Domain.AdminUser }
 if (-not $TargetOU) { $TargetOU = $Config.Paths.ComputersOU }
+
+Write-Host "Setting static IP + DNS..." -ForegroundColor Cyan
+& "$PSScriptRoot\Set-StaticIP.ps1"
 
 Write-Host "Enabling WinRM locally..." -ForegroundColor Cyan
 Enable-PSRemoting -Force -SkipNetworkProfileCheck

@@ -29,6 +29,9 @@ $BrandingGpoName = $Config.GPO.BrandingGpoName
 $SplashPng      = $Config.Branding.SplashPng
 $WallpaperPng   = $Config.Branding.WallpaperPng
 $LockScreenPng  = $Config.Branding.LockScreenPng
+$PersonalDriveLetter = $Config.Personal.DriveLetter
+$PersonalFolderName  = $Config.Personal.FolderName
+$ServerHostname = $env:COMPUTERNAME
 
 $domainDN = (Get-ADDomain).DistinguishedName
 $usersOU  = "OU=Users,OU=Domech,$domainDN"
@@ -85,6 +88,41 @@ foreach ($u in $Users) {
 }
 Write-Host "Initial passwords written to C:\01_matrix\Scratch\NewUserPasswords.txt - hand these out securely and delete the file after." -ForegroundColor Yellow
 
+# ---- Personal per-user folders + shares (each user's own home drive) ----
+# Runs AFTER user creation above, since the ACL grants below need the AD
+# account to already exist.
+Write-Host "Creating personal folders and shares..." -ForegroundColor Cyan
+$personalRoot = Join-Path $DataRoot $PersonalFolderName
+New-Item -ItemType Directory -Path $personalRoot -Force | Out-Null
+$redirectedFolders = @("Desktop","Documents","Downloads","Pictures")
+foreach ($u in $Users) {
+    $path = Join-Path $personalRoot $u.Sam
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
+    foreach ($rf in $redirectedFolders) {
+        New-Item -ItemType Directory -Path (Join-Path $path $rf) -Force | Out-Null
+    }
+    $shareName = "$($u.Sam)$"
+    if (-not (Get-SmbShare -Name $shareName -ErrorAction SilentlyContinue)) {
+        New-SmbShare -Name $shareName -Path $path -FullAccess "DF\Domain Admins" | Out-Null
+    }
+    Revoke-SmbShareAccess -Name $shareName -AccountName "Everyone" -Force -ErrorAction SilentlyContinue
+    Grant-SmbShareAccess -Name $shareName -AccountName "DF\$($u.Sam)" -AccessRight Full -Force | Out-Null
+
+    $acl = Get-Acl $path
+    $acl.SetAccessRuleProtection($true, $false)   # break inheritance - this folder is that user's alone
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "DF\$($u.Sam)", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "DF\Domain Admins", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $acl.AddAccessRule($rule)
+    $acl.AddAccessRule($adminRule)
+    $acl.AddAccessRule($systemRule)
+    Set-Acl -Path $path -AclObject $acl
+}
+Write-Host "  $($Users.Count) personal folders/shares ready under $personalRoot" -ForegroundColor Green
+
 # ---- Auto-mount drives via Group Policy Preferences ----
 # GPP Drive Maps live in the GPO's Drives.xml under SYSVOL, keyed by group SID.
 # There is no native New-GPPref cmdlet for drive maps, so we write the XML directly.
@@ -97,9 +135,9 @@ $domain = (Get-ADDomain).DNSRoot
 $gpoPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\User\Preferences\Drives"
 New-Item -ItemType Directory -Path $gpoPath -Force | Out-Null
 
-$driveEntries = foreach ($d in $Departments) {
+$departmentDriveEntries = foreach ($d in $Departments) {
     $sid = (Get-ADGroup $d.GroupName).SID.Value
-    $uncPath = "\\SERVER01\$($d.ShareName)"   # update SERVER01 to the real DF.local server hostname
+    $uncPath = "\\$ServerHostname\$($d.ShareName)"
     @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($d.DriveLetter):" status="$($d.DriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
     <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="$($d.FolderName)" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
@@ -110,14 +148,51 @@ $driveEntries = foreach ($d in $Departments) {
 "@
 }
 
+# Personal drive per user - filtered by USER (not group), so each person
+# only ever sees their own home drive, mounted at the same letter for everyone.
+$personalDriveEntries = foreach ($u in $Users) {
+    $userSid = (Get-ADUser $u.Sam).SID.Value
+    $uncPath = "\\$ServerHostname\$($u.Sam)$"
+    @"
+  <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($PersonalDriveLetter):" status="$($PersonalDriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
+    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="My Files" persistent="1" useLetter="1" letter="$($PersonalDriveLetter)"/>
+    <Filters>
+      <FilterUser bool="AND" not="0" name="DF\$($u.Sam)" sid="$userSid" userContext="1"/>
+    </Filters>
+  </Drive>
+"@
+}
+
 @"
 <?xml version="1.0" encoding="utf-8"?>
 <Drives clsid="{8FDDCC1A-0C3C-43cd-A6B4-71A6DF20DA8C}">
-$($driveEntries -join "`n")
+$($departmentDriveEntries -join "`n")
+$($personalDriveEntries -join "`n")
 </Drives>
 "@ | Out-File "$gpoPath\Drives.xml" -Encoding UTF8
 
-Write-Host "Drive mapping GPO created. IMPORTANT: edit the UNC path (SERVER01) in this script to your real DF.local server hostname before running, or edit Drives.xml directly after." -ForegroundColor Yellow
+Write-Host "Drive mapping GPO created: department drives + a personal '$($PersonalDriveLetter):' drive per user pointing at their own \\$ServerHostname\<username>`$ share." -ForegroundColor Green
+
+# ---- Redirect Desktop/Documents/Downloads/Pictures to the personal share ----
+# This is what actually makes it "backup all the user folder" - files land
+# on the server the moment they're saved, not on a schedule. Uses
+# ExpandString registry values with %USERNAME% so one GPO setting resolves
+# to a different path per person automatically - no per-user GPO needed.
+Write-Host "Setting up folder redirection to personal drives..." -ForegroundColor Cyan
+$shellFolderMap = @{
+    "Desktop"   = "Desktop"
+    "Personal"  = "Documents"    # registry name for the Documents folder is "Personal"
+    "{374DE290-123F-4565-9164-39C4925E467B}" = "Downloads"
+    "My Pictures" = "Pictures"
+}
+foreach ($regName in $shellFolderMap.Keys) {
+    $targetUnc = "\\$ServerHostname\%USERNAME%`$\$($shellFolderMap[$regName])"
+    Set-GPRegistryValue -Name $GpoName -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" `
+        -ValueName $regName -Type ExpandString -Value $targetUnc | Out-Null
+    Set-GPRegistryValue -Name $GpoName -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" `
+        -ValueName $regName -Type ExpandString -Value $targetUnc | Out-Null
+}
+Write-Host "  Desktop/Documents/Downloads/Pictures will redirect to each user's personal share after next login." -ForegroundColor Green
 
 # ---- Post-login splash (image popup, deployed via GPO logon script) ----
 Write-Host "Setting up post-login splash..." -ForegroundColor Cyan
@@ -164,4 +239,4 @@ if (Test-Path $LockScreenPng) {
     Write-Host "  Lock screen image not found at $LockScreenPng - export one and rerun this section." -ForegroundColor Yellow
 }
 
-Write-Host "`nDone. Test by logging in as one user on one workstation and confirming drives auto-mount, the splash appears, and wallpaper/lock screen apply after 'gpupdate /force' + relogin." -ForegroundColor Green
+Write-Host "`nDone. Test by logging in as one user on one workstation: department drives + their personal '$($PersonalDriveLetter):' drive should auto-mount, Desktop/Documents/Downloads/Pictures should redirect to their personal share, the splash should appear, and wallpaper/lock screen should apply - after 'gpupdate /force' + relogin." -ForegroundColor Green
