@@ -73,6 +73,38 @@ function Initialize-DomechContext {
     return $config
 }
 
+function Test-NtfsAceExists {
+    <#
+    True if this exact Allow ACE is already on the folder.
+
+    Worth checking, because applying an inheritable ACE makes Windows rewrite
+    permissions on every file and subfolder underneath. On a share holding
+    real company data that can run for a very long time with no output at all,
+    so re-running setup should never redo work that is already done.
+
+    Only meaningful once a previous run FINISHED - if propagation was
+    interrupted part way, the parent can hold the ACE while children still
+    lack it. Use -ForceAcl in that case.
+    #>
+    param(
+        [Parameter(Mandatory=$true)]$Acl,
+        [Parameter(Mandatory=$true)][string]$Identity,
+        [Parameter(Mandatory=$true)][System.Security.AccessControl.FileSystemRights]$Rights,
+        [string]$InheritanceFlags = "ContainerInherit, ObjectInherit"
+    )
+    foreach ($ace in $Acl.Access) {
+        # Explicit ACEs only. An inherited one granting the same thing would
+        # otherwise count as "already done" and skip writing the explicit ACE
+        # this folder is supposed to carry in its own right.
+        if ($ace.IsInherited)                                       { continue }
+        if ($ace.AccessControlType -ne 'Allow')                     { continue }
+        if ($ace.IdentityReference.Value -ne $Identity)             { continue }
+        if ($ace.InheritanceFlags.ToString() -ne $InheritanceFlags) { continue }
+        if (($ace.FileSystemRights -band $Rights) -eq $Rights)      { return $true }
+    }
+    return $false
+}
+
 function Block-DomainAdminsFromGPO {
     <#
     Denies "Apply Group Policy" to Domain Admins on the given GPO, so IT/admin

@@ -41,7 +41,12 @@ param(
     # it. If not passed, it is read from Domain.TemporaryUserPassword in the
     # LOCAL config.json on this server (which updates never overwrite), and
     # only if that is absent does it ask.
-    [string]$TemporaryPassword
+    [string]$TemporaryPassword,
+
+    # Re-apply folder permissions even when they already look correct. Needed
+    # only if a previous run was interrupted part way through applying them,
+    # which can leave the top folder correct while files inside it are not.
+    [switch]$ForceAcl
 )
 
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
@@ -124,14 +129,30 @@ Write-Host "Applying share and NTFS permissions..." -ForegroundColor Cyan
 foreach ($d in $Departments) {
     $path   = Join-Path $DataRoot $d.FolderName
     $right  = if ($d.ReadOnly) { "Read" } else { "Full" }
-    Revoke-SmbShareAccess -Name $d.ShareName -AccountName "Everyone" -Force -ErrorAction SilentlyContinue
+    Write-Host "  $($d.FolderName):" -ForegroundColor White
+    Revoke-SmbShareAccess -Name $d.ShareName -AccountName "Everyone" -Force -ErrorAction SilentlyContinue | Out-Null
     Grant-SmbShareAccess -Name $d.ShareName -AccountName "DF\$($d.GroupName)" -AccessRight $right -Force | Out-Null
+    Write-Host "    share permissions set." -ForegroundColor Green
 
     $acl = Get-Acl $path
-    $ntfsRight = if ($d.ReadOnly) { "ReadAndExecute" } else { "Modify" }
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-        "DF\$($d.GroupName)", $ntfsRight, "ContainerInherit,ObjectInherit", "None", "Allow")
-    $acl.AddAccessRule($rule)
+    $wantRights = if ($d.ReadOnly) {
+        [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
+    } else {
+        [System.Security.AccessControl.FileSystemRights]::Modify
+    }
+
+    # Only write the folder ACL if something is actually missing. Writing an
+    # inheritable ACE makes Windows rewrite permissions on every file beneath
+    # it, which on a share full of live data runs for a long time - so a
+    # re-run should not pay that cost again once it is already correct.
+    $aclNeedsWrite = $false
+    if (-not (Test-NtfsAceExists -Acl $acl -Identity "DF\$($d.GroupName)" -Rights $wantRights) -or $ForceAcl) {
+        $ntfsRight = if ($d.ReadOnly) { "ReadAndExecute" } else { "Modify" }
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "DF\$($d.GroupName)", $ntfsRight, "ContainerInherit,ObjectInherit", "None", "Allow")
+        $acl.AddAccessRule($rule)
+        $aclNeedsWrite = $true
+    }
 
     # Sub-department groups (e.g. Purchase, SalaryWages inside SalaryWagesPurchase):
     # traverse-only on this parent folder so they can reach their own subfolder,
@@ -139,21 +160,41 @@ foreach ($d in $Departments) {
     # hides the subfolders they DON'T have rights to, rather than just denying
     # them on open - so Mansi never even sees "Salary Wages" listed, and vice versa.
     foreach ($sub in $d.SubDepartments) {
-        $traverseRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "DF\$($sub.GroupName)", "ReadAndExecute", "None", "None", "Allow")
-        $acl.AddAccessRule($traverseRule)
+        $hasTraverse = Test-NtfsAceExists -Acl $acl -Identity "DF\$($sub.GroupName)" `
+            -Rights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) -InheritanceFlags "None"
+        if (-not $hasTraverse -or $ForceAcl) {
+            $traverseRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "DF\$($sub.GroupName)", "ReadAndExecute", "None", "None", "Allow")
+            $acl.AddAccessRule($traverseRule)
+            $aclNeedsWrite = $true
+        }
     }
-    Set-Acl -Path $path -AclObject $acl
+
+    if ($aclNeedsWrite) {
+        Write-Host "    applying folder permissions - on a big folder this can take a long time, leave it running..." -ForegroundColor Yellow
+        $started = Get-Date
+        Set-Acl -Path $path -AclObject $acl
+        Write-Host "    done in $([int]((Get-Date) - $started).TotalSeconds)s." -ForegroundColor Green
+    } else {
+        Write-Host "    folder permissions already correct - skipped." -ForegroundColor Green
+    }
 
     foreach ($sub in $d.SubDepartments) {
         Grant-SmbShareAccess -Name $d.ShareName -AccountName "DF\$($sub.GroupName)" -AccessRight Full -Force | Out-Null
 
         $subPath = Join-Path $path $sub.FolderName
         $subAcl = Get-Acl $subPath
-        $subRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "DF\$($sub.GroupName)", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
-        $subAcl.AddAccessRule($subRule)
-        Set-Acl -Path $subPath -AclObject $subAcl
+        $subWant = [System.Security.AccessControl.FileSystemRights]::Modify
+        if (-not (Test-NtfsAceExists -Acl $subAcl -Identity "DF\$($sub.GroupName)" -Rights $subWant) -or $ForceAcl) {
+            Write-Host "    applying permissions to $($sub.FolderName) - may take a while..." -ForegroundColor Yellow
+            $subRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "DF\$($sub.GroupName)", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+            $subAcl.AddAccessRule($subRule)
+            Set-Acl -Path $subPath -AclObject $subAcl
+            Write-Host "    $($sub.FolderName) done." -ForegroundColor Green
+        } else {
+            Write-Host "    $($sub.FolderName) already correct - skipped." -ForegroundColor Green
+        }
     }
 
     if ($d.SubDepartments) {
