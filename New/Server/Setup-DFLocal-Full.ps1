@@ -27,6 +27,7 @@ $DataRoot    = $Config.Paths.DataRoot
 $GpoName     = $Config.GPO.DriveMapGpoName
 $BrandingGpoName = $Config.GPO.BrandingGpoName
 $SplashPng      = $Config.Branding.SplashPng
+$SplashFontTtf  = $Config.Branding.SplashFontTtf
 $WallpaperPng   = $Config.Branding.WallpaperPng
 $LockScreenPng  = $Config.Branding.LockScreenPng
 $PersonalDriveLetter = $Config.Personal.DriveLetter
@@ -200,7 +201,11 @@ if (Test-Path $SplashPng) {
     $netlogonPath = "\\$domain\NETLOGON"
     Copy-Item $SplashPng "$netlogonPath\LoginSplash.png" -Force
     Copy-Item "$PSScriptRoot\..\Workstation\Show-LoginSplash.ps1" "$netlogonPath\Show-LoginSplash.ps1" -Force
-    Write-Host "  Splash image + script copied to NETLOGON. Link it as a User Logon script in the '$GpoName' GPO (or a separate GPO): powershell.exe -ExecutionPolicy Bypass -File Show-LoginSplash.ps1" -ForegroundColor Yellow
+    if ($SplashFontTtf -and (Test-Path $SplashFontTtf)) {
+        New-Item -ItemType Directory -Path "$netlogonPath\Fonts" -Force | Out-Null
+        Copy-Item $SplashFontTtf "$netlogonPath\Fonts\Geist-Bold.ttf" -Force
+    }
+    Write-Host "  Splash background + font copied to NETLOGON. The employee's real name is drawn on top live at logon - it doesn't need a separate image per person. Link Show-LoginSplash.ps1 as a User Logon script in the '$GpoName' GPO (or a separate GPO): powershell.exe -ExecutionPolicy Bypass -File Show-LoginSplash.ps1" -ForegroundColor Yellow
 } else {
     Write-Host "  Splash image not found at $SplashPng - export a PNG from your Illustrator file and place it there, then rerun this section." -ForegroundColor Yellow
 }
