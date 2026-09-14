@@ -1,0 +1,8 @@
+# Site-specific config and generated content - never versioned.
+# A fresh git clone lands these missing on purpose; copy them in manually
+# (see README.md) and they'll never be touched by a future git pull.
+/config.json
+/Assets/
+/Logs/
+/Scratch/
+/DomechNetworkScan_RunInstructions.docx
