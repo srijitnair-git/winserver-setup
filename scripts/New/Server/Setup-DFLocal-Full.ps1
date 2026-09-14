@@ -530,6 +530,16 @@ Write-Host "  Desktop/Documents/Downloads/Pictures will redirect to each user's 
 if ($Only -in @('All','Branding')) {
 Write-Host "### SECTION: branding (splash, wallpaper, lock screen) ###" -ForegroundColor Magenta
 
+# These are set up by the DriveMaps section above, but this section has to work
+# when run on its own with -Only Branding, so establish them here too.
+$domain    = (Get-ADDomain).DNSRoot
+$gpoAdPath = "CN=Policies,CN=System,$domainDN"
+$gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
+if (-not $gpo) {
+    $gpo = New-GPO -Name $GpoName
+    New-GPLink -Name $GpoName -Target $domainDN -ErrorAction SilentlyContinue | Out-Null
+}
+
 # ---- Post-login splash (image popup, registered directly as a GPO User Logon script) ----
 # Previously this just copied the files to NETLOGON with a note to link it
 # manually in GPMC - that manual step was never done on-site, so the splash
@@ -581,29 +591,60 @@ New-GPLink -Name $BrandingGpoName -Target $domainDN -ErrorAction SilentlyContinu
 
 $netlogonPath = "\\$domain\NETLOGON"
 
-if (Test-Path $WallpaperPng) {
-    Copy-Item $WallpaperPng "$netlogonPath\Wallpaper.png" -Force
-    # User Config > Admin Templates > Desktop > Desktop > "Desktop Wallpaper"
-    Set-GPRegistryValue -Name $BrandingGpoName -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" `
-        -ValueName "Wallpaper" -Type String -Value "$netlogonPath\Wallpaper.png" | Out-Null
-    Set-GPRegistryValue -Name $BrandingGpoName -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" `
-        -ValueName "WallpaperStyle" -Type String -Value "10" | Out-Null   # 10 = Fill
-    Write-Host "  Wallpaper policy set." -ForegroundColor Green
-} else {
-    Write-Host "  Wallpaper image not found at $WallpaperPng - export one and rerun this section." -ForegroundColor Yellow
+# The previous version set these through Group Policy registry values, which
+# did not work here for two reasons:
+#   - the wallpaper was written to Policies\ActiveDesktop. The "Desktop
+#     Wallpaper" policy actually lives under Policies\System, so it was
+#     writing to a key Windows never reads for that setting.
+#   - the lock screen policy ("Force a specific default lock screen image")
+#     only applies on Enterprise and Education. These workstations are OEM
+#     Pro, where it is silently ignored.
+# Both are now applied by Apply-Branding.ps1 running as a computer startup
+# script, which uses PersonalizationCSP - machine-wide, works on Pro, and
+# covers users who have never signed into that machine before.
+$copied = $true
+foreach ($img in @(@{Path=$WallpaperPng; Name="Wallpaper.png"}, @{Path=$LockScreenPng; Name="LockScreen.png"})) {
+    if (Test-Path $img.Path) {
+        Copy-Item $img.Path "$netlogonPath\$($img.Name)" -Force
+        Write-Host "  $($img.Name) published to NETLOGON." -ForegroundColor Green
+    } else {
+        Write-Host "  $($img.Name) not found at $($img.Path) - branding will skip it." -ForegroundColor Yellow
+        $copied = $false
+    }
 }
 
-if (Test-Path $LockScreenPng) {
-    Copy-Item $LockScreenPng "$netlogonPath\LockScreen.png" -Force
-    # Computer Config > Admin Templates > Control Panel > Personalization >
-    # "Force a specific default lock screen and logon image"
-    Set-GPRegistryValue -Name $BrandingGpoName -Key "HKLM\Software\Policies\Microsoft\Windows\Personalization" `
-        -ValueName "LockScreenImage" -Type String -Value "$netlogonPath\LockScreen.png" | Out-Null
-    Set-GPRegistryValue -Name $BrandingGpoName -Key "HKLM\Software\Policies\Microsoft\Windows\Personalization" `
-        -ValueName "NoChangingLockScreen" -Type DWord -Value 1 | Out-Null
-    Write-Host "  Lock screen policy set." -ForegroundColor Green
-} else {
-    Write-Host "  Lock screen image not found at $LockScreenPng - export one and rerun this section." -ForegroundColor Yellow
+if ($copied) {
+    $brandingScript = Get-Content "$PSScriptRoot\..\Workstation\Apply-Branding.ps1" -Raw
+    $brandingScript = $brandingScript -replace '__NETLOGON_PLACEHOLDER__', $netlogonPath
+    $brandingScript | Out-File "$netlogonPath\Apply-Branding.ps1" -Encoding UTF8 -Force
+
+    $machineScriptsPath = "\\$domain\SYSVOL\$domain\Policies\{$($brandingGpo.Id)}\Machine\Scripts"
+    New-Item -ItemType Directory -Path "$machineScriptsPath\Startup" -Force | Out-Null
+    @"
+[Startup]
+0CmdLine=powershell.exe
+0Parameters=-ExecutionPolicy Bypass -File \\$domain\NETLOGON\Apply-Branding.ps1
+"@ | Out-File "$machineScriptsPath\scripts.ini" -Encoding Unicode
+
+    # Register the Scripts extension on the MACHINE side and bump the version,
+    # or clients skip the startup script with no error - the same silent
+    # failure that stopped the drive maps and the services script running.
+    $scriptsExtensionPair = "[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]"
+    $brandingAd = Get-ADObject -Filter "displayName -eq '$BrandingGpoName'" -SearchBase $gpoAdPath -Properties gPCMachineExtensionNames, versionNumber
+    if ($brandingAd) {
+        $ext = $brandingAd.gPCMachineExtensionNames
+        if (-not $ext -or $ext -notlike "*42B5FAAE*") {
+            Set-ADObject -Identity $brandingAd.DistinguishedName -Replace @{ gPCMachineExtensionNames = "$ext$scriptsExtensionPair" }
+            Write-Host "  Startup script extension registered on '$BrandingGpoName'." -ForegroundColor Green
+        }
+        $bVersion = [int]$brandingAd.versionNumber + 65537
+        Set-ADObject -Identity $brandingAd.DistinguishedName -Replace @{ versionNumber = $bVersion }
+        $bGptIni = "\\$domain\SYSVOL\$domain\Policies\{$($brandingGpo.Id)}\gpt.ini"
+        (Get-Content $bGptIni) -replace '^Version=\d+', "Version=$bVersion" | Set-Content $bGptIni
+        Write-Host "  Wallpaper and lock screen will apply at each workstation's next restart." -ForegroundColor Green
+    } else {
+        Write-Host "  Could not find the '$BrandingGpoName' AD object - wallpaper and lock screen will NOT apply until the startup script extension is registered on it." -ForegroundColor Red
+    }
 }
 
 }   # end SECTION Branding

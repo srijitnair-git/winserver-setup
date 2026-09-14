@@ -118,6 +118,12 @@ while ($true) {
     Write-Host "   6. Clear the old Salary / Purchase folders"
     Write-Host "   7. Run all of 1-6 in the correct order"
     Write-Host ""
+    Write-Host "  ROLLOUT (server)" -ForegroundColor Cyan
+    Write-Host "  11. Wallpaper, lock screen and login splash"
+    Write-Host "  12. Install/update apps on every workstation"
+    Write-Host "  13. Find printers on the network - reports only, changes nothing"
+    Write-Host "  14. Deploy printers to users (fill in config.json Printers first)"
+    Write-Host ""
     Write-Host "  ON THIS PC (server or workstation)" -ForegroundColor Cyan
     Write-Host "   8. Repair my Windows profile (Explorer, Settings, Control Panel)"
     Write-Host "   9. Fix this workstation (profile + refresh policy + check drives)"
@@ -138,6 +144,10 @@ while ($true) {
         '8'  { Invoke-Toolkit 'scripts\Repair-UserProfile.ps1' -Arguments @('-Force') }
         '9'  { Invoke-Toolkit 'scripts\New\Workstation\Repair-Workstation.ps1' }
         '10' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-DriveMapping.ps1' }
+        '11' { Invoke-Toolkit $setup -Arguments @('-Only','Branding')               -NeedsElevation }
+        '12' { Invoke-Toolkit 'scripts\New\Server\Deploy-AppInstallGPO.ps1'         -NeedsElevation }
+        '13' { Invoke-Toolkit 'scripts\New\Server\Find-NetworkPrinters.ps1'         -NeedsElevation }
+        '14' { Invoke-Toolkit 'scripts\New\Server\Deploy-PrintersGPO.ps1'           -NeedsElevation }
         '0'  { return }
         default { Write-Host "  Pick a number from the list." -ForegroundColor Yellow }
     }
