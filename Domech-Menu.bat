@@ -49,10 +49,12 @@ echo   instead (in the same folder as this file) - it does NOT elevate,
 echo   so it runs as whoever is actually logged in.
 echo.
 echo   1. Test workstation connectivity (WinRM check, run from server)
+echo   2. Diagnose server shares/disks (run ON the server - disk health, shares, services)
 echo   0. Back
 echo.
 set /p c="Choose an option: "
 if "%c%"=="1" call :run "New\Workstation\Test-WorkstationConnectivity.ps1"
+if "%c%"=="2" call :run "New\Server\Diagnose-ServerShares.ps1"
 if "%c%"=="0" goto main
 goto diagnostics
 
