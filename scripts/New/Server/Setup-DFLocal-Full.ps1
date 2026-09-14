@@ -141,11 +141,34 @@ foreach ($d in $Departments) {
         [System.Security.AccessControl.FileSystemRights]::Modify
     }
 
+    # Break inheritance from D:\ and strip blanket access.
+    # D:\ carries the Windows default permissions, which grant Users and
+    # Authenticated Users access to everything beneath it. Those inherit into
+    # every department folder, so ADDING group permissions on top restricted
+    # nothing - any domain user who could connect to the share could open any
+    # subfolder in it, and access-based enumeration correctly showed them
+    # subfolders they were never meant to see. Access has to come from group
+    # membership alone, so the inherited blanket grants are removed here.
+    # SYSTEM and Domain Admins are always re-added, so the server and IT can
+    # never be locked out of the data.
+    $aclNeedsWrite = $false
+    if (-not $acl.AreAccessRulesProtected -or $ForceAcl) {
+        Write-Host "    removing inherited blanket access (this is what let everyone see everything)..." -ForegroundColor Yellow
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($ace in @($acl.Access | Where-Object { -not $_.IsInherited })) {
+            [void]$acl.RemoveAccessRule($ace)
+        }
+        foreach ($keep in @(
+            (New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")),
+            (New-Object System.Security.AccessControl.FileSystemAccessRule("DF\Domain Admins", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"))
+        )) { $acl.AddAccessRule($keep) }
+        $aclNeedsWrite = $true
+    }
+
     # Only write the folder ACL if something is actually missing. Writing an
     # inheritable ACE makes Windows rewrite permissions on every file beneath
     # it, which on a share full of live data runs for a long time - so a
     # re-run should not pay that cost again once it is already correct.
-    $aclNeedsWrite = $false
     if (-not (Test-NtfsAceExists -Acl $acl -Identity "DF\$($d.GroupName)" -Rights $wantRights) -or $ForceAcl) {
         $ntfsRight = if ($d.ReadOnly) { "ReadAndExecute" } else { "Modify" }
         $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
