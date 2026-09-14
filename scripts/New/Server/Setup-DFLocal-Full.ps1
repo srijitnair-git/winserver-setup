@@ -353,11 +353,18 @@ $departmentDriveEntries = foreach ($d in $Departments) {
     }
     $sid = $depGroup.SID.Value
     $uncPath = "\\$ServerHostname\$($d.ShareName)"
+    # Escape anything going into an XML attribute. A folder name containing
+    # "&" (e.g. "Salary Wages & Purchase") is not valid XML unescaped - the
+    # Group Policy client stops parsing Drives.xml at that character and
+    # silently drops every drive defined after it, with no error anywhere.
+    $labelXml = [System.Security.SecurityElement]::Escape($d.FolderName)
+    $pathXml  = [System.Security.SecurityElement]::Escape($uncPath)
+    $groupXml = [System.Security.SecurityElement]::Escape($d.GroupName)
     @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($d.DriveLetter):" status="$($d.DriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
-    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="$($d.FolderName)" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
+    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$pathXml" label="$labelXml" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
     <Filters>
-      <FilterGroup bool="AND" not="0" name="$($d.GroupName)" sid="$sid" userContext="1" primaryGroup="0" localGroup="0"/>
+      <FilterGroup bool="AND" not="0" name="$groupXml" sid="$sid" userContext="1" primaryGroup="0" localGroup="0"/>
     </Filters>
   </Drive>
 "@
@@ -372,11 +379,12 @@ $departmentDriveEntries = foreach ($d in $Departments) {
             continue
         }
         $subSid = $subGroup.SID.Value
+        $subGroupXml = [System.Security.SecurityElement]::Escape($sub.GroupName)
         @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($d.DriveLetter):" status="$($d.DriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
-    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="$($d.FolderName)" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
+    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$pathXml" label="$labelXml" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
     <Filters>
-      <FilterGroup bool="AND" not="0" name="$($sub.GroupName)" sid="$subSid" userContext="1" primaryGroup="0" localGroup="0"/>
+      <FilterGroup bool="AND" not="0" name="$subGroupXml" sid="$subSid" userContext="1" primaryGroup="0" localGroup="0"/>
     </Filters>
   </Drive>
 "@
@@ -393,23 +401,41 @@ $personalDriveEntries = foreach ($u in $Users) {
     }
     $userSid = $adUser.SID.Value
     $uncPath = "\\$ServerHostname\$($u.Sam)$"
+    $userPathXml = [System.Security.SecurityElement]::Escape($uncPath)
+    $userNameXml = [System.Security.SecurityElement]::Escape("DF\$($u.Sam)")
     @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($PersonalDriveLetter):" status="$($PersonalDriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
-    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="My Files" persistent="1" useLetter="1" letter="$($PersonalDriveLetter)"/>
+    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$userPathXml" label="My Files" persistent="1" useLetter="1" letter="$($PersonalDriveLetter)"/>
     <Filters>
-      <FilterUser bool="AND" not="0" name="DF\$($u.Sam)" sid="$userSid" userContext="1"/>
+      <FilterUser bool="AND" not="0" name="$userNameXml" sid="$userSid" userContext="1"/>
     </Filters>
   </Drive>
 "@
 }
 
-@"
+$drivesXml = @"
 <?xml version="1.0" encoding="utf-8"?>
 <Drives clsid="{8FDDCC1A-0C3C-43cd-A6B4-71A6DF20DA8C}">
 $($departmentDriveEntries -join "`n")
 $($personalDriveEntries -join "`n")
 </Drives>
-"@ | Out-File "$gpoPath\Drives.xml" -Encoding UTF8
+"@
+
+# Prove the file is valid XML BEFORE publishing it. The Group Policy client
+# gives no error on a malformed Drives.xml - it just stops reading at the bad
+# character and silently ignores every drive defined after it. That is not
+# something anyone can diagnose from the client side, so it gets caught here.
+try {
+    $parsed = [xml]$drivesXml
+    $driveCount = $parsed.Drives.Drive.Count
+    $drivesXml | Out-File "$gpoPath\Drives.xml" -Encoding UTF8
+    Write-Host "  Drives.xml written and validated - $driveCount drive entries." -ForegroundColor Green
+} catch {
+    Write-Host "  REFUSING TO WRITE Drives.xml - the generated file is not valid XML:" -ForegroundColor Red
+    Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  The existing drive mappings have been left untouched. This is usually a name in config.json containing a character that is special in XML." -ForegroundColor Red
+    throw
+}
 
 # Writing Drives.xml into SYSVOL alone does NOT tell Windows clients that
 # this GPO contains Drive Maps preferences - there's no New-GPPref cmdlet
