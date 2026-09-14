@@ -82,8 +82,12 @@ foreach ($name in $folders.Keys) {
 
     # Read back rather than trusting the write - this is the value that decides
     # whether Explorer works, so it is worth proving it landed.
+    # Compare against the EXPANDED path: the value is stored as REG_EXPAND_SZ
+    # ("%USERPROFILE%\Desktop") but reading it back returns it already expanded
+    # ("C:\Users\Administrator\Desktop"), so comparing to the literal text
+    # reports a failure on a write that actually succeeded.
     $after = (Get-ItemProperty -Path $userShellKey -Name $name -ErrorAction SilentlyContinue).$name
-    if ($after -eq "%USERPROFILE%\$leaf") {
+    if ($after -eq $localDefault) {
         Write-Line "$leaf : reset to $localDefault" -Level Success
         $fixed++
     } else {
