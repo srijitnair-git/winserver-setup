@@ -14,6 +14,8 @@ $RepoRoot    = Split-Path $ScriptsRoot -Parent
 . "$ScriptsRoot\DomechCommon.ps1"
 $Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
+Write-DomechLog "Running as: $env:USERDOMAIN\$env:USERNAME - if this isn't the affected user, these results are meaningless. Run via Run-Diagnostics.bat (not Domech-Menu.bat) so it doesn't elevate to a different account." -Level Warning
+
 Write-DomechLog "===== Currently mapped drives =====" -Level Info
 net use | Out-String | Write-DomechLog -Level Info
 Get-SmbMapping | Format-Table -AutoSize | Out-String | Write-DomechLog -Level Info

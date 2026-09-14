@@ -42,13 +42,17 @@ cls
 echo ==============================
 echo   DIAGNOSTICS
 echo ==============================
-echo   1. Diagnose drive mapping (run ON the affected user's PC, logged in as them)
-echo   2. Test workstation connectivity (WinRM check, run from server)
+echo   This menu self-elevates (admin), so it always runs as whoever
+echo   approves the UAC prompt - NOT necessarily the logged-in user.
+echo   For per-user checks like drive mapping, use Run-Diagnostics.bat
+echo   instead (in the same folder as this file) - it does NOT elevate,
+echo   so it runs as whoever is actually logged in.
+echo.
+echo   1. Test workstation connectivity (WinRM check, run from server)
 echo   0. Back
 echo.
 set /p c="Choose an option: "
-if "%c%"=="1" call :run "New\Workstation\Diagnose-DriveMapping.ps1"
-if "%c%"=="2" call :run "New\Workstation\Test-WorkstationConnectivity.ps1"
+if "%c%"=="1" call :run "New\Workstation\Test-WorkstationConnectivity.ps1"
 if "%c%"=="0" goto main
 goto diagnostics
 

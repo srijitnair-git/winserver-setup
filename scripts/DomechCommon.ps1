@@ -18,7 +18,7 @@ function Start-DomechLog {
 
 function Write-DomechLog {
     param(
-        [Parameter(Mandatory=$true, ValueFromPipeline=$true)][string]$Message,
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)][AllowEmptyString()][string]$Message,
         [ValidateSet("Info","Success","Warning","Error")][string]$Level = "Info"
     )
     process {
