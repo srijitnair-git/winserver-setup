@@ -22,22 +22,24 @@
     "SNEHA-DF", "AUDITOR-DF", "MANSI-DF",
     "PRAKASH-DF", "SUPRIYA-DF", "JOSEPH-LT"
   ],
-  "_comment_workstations": "AUDITOR-PC removed - duplicate of AUDITOR-DF (same person, old machine per the network plan doc which only lists one Auditor drop). NISHA-DF has no static IP yet below - her network drop is still unconfirmed on-site per Domech_IP_Address_Plan.md.",
+  "_comment_workstations": "AUDITOR-PC removed - duplicate of AUDITOR-DF (same person, old machine per the network plan doc which only lists one Auditor drop). JOSEPH-LT's IP (D-36) is labeled 'owner, personal cabin' in the updated drop table - unconfirmed whether this is the same K M Joseph tracked as a regular employee in Users below, or the company owner. Confirm before relying on it.",
   "Network": {
     "SubnetPrefixLength": 24,
     "Gateway": "192.168.0.1",
     "DnsServer": "192.168.0.10",
-    "_comment": "IPs below follow the real drop-number plan (03_ip_and_network/Domech_IP_Address_Plan.md): 192.168.0.(100 + drop number). DnsServer is the DF.local DC's own static IP.",
+    "_comment": "IPs below follow the confirmed drop-number table (updated 2026-09-14, supersedes the earlier version of 03_ip_and_network/Domech_IP_Address_Plan.md for NISHA-DF's drop): 192.168.0.(100 + drop number). DnsServer is the DF.local DC's own static IP.",
     "WorkstationIPs": {
       "SNEHA-DF": "192.168.0.110",
       "MANSI-DF": "192.168.0.115",
+      "NISHA-DF": "192.168.0.125",
       "PRAKASH-DF": "192.168.0.127",
       "SUPRIYA-DF": "192.168.0.129",
       "PRIYANKA-DF": "192.168.0.130",
       "AUDITOR-DF": "192.168.0.131",
       "RAHUL-DF": "192.168.0.132",
       "GOKUL-DF": "192.168.0.133",
-      "BALAJI-DF": "192.168.0.134"
+      "BALAJI-DF": "192.168.0.134",
+      "JOSEPH-LT": "192.168.0.136"
     }
   },
   "Departments": [
