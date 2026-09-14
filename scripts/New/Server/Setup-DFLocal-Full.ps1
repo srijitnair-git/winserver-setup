@@ -327,7 +327,13 @@ foreach ($regName in $shellFolderMap.Keys) {
 }
 Write-Host "  Desktop/Documents/Downloads/Pictures will redirect to each user's personal share after next login." -ForegroundColor Green
 
-# ---- Post-login splash (image popup, deployed via GPO logon script) ----
+# ---- Post-login splash (image popup, registered directly as a GPO User Logon script) ----
+# Previously this just copied the files to NETLOGON with a note to link it
+# manually in GPMC - that manual step was never done on-site, so the splash
+# never ran. Registered automatically now, the same way as the Drive Maps
+# fix above: write scripts.ini directly AND register the legacy Scripts
+# client-side extension on the GPO's AD object, since an unregistered
+# extension is silently skipped by clients with no error anywhere.
 Write-Host "Setting up post-login splash..." -ForegroundColor Cyan
 if (Test-Path $SplashPng) {
     $netlogonPath = "\\$domain\NETLOGON"
@@ -337,7 +343,28 @@ if (Test-Path $SplashPng) {
         New-Item -ItemType Directory -Path "$netlogonPath\Fonts" -Force | Out-Null
         Copy-Item $SplashFontTtf "$netlogonPath\Fonts\Geist-Bold.ttf" -Force
     }
-    Write-Host "  Splash background + font copied to NETLOGON. The employee's real name is drawn on top live at logon - it doesn't need a separate image per person. Link Show-LoginSplash.ps1 as a User Logon script in the '$GpoName' GPO (or a separate GPO): powershell.exe -ExecutionPolicy Bypass -File Show-LoginSplash.ps1" -ForegroundColor Yellow
+
+    $userScriptsPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\User\Scripts"
+    New-Item -ItemType Directory -Path $userScriptsPath -Force | Out-Null
+    @"
+[Logon]
+0CmdLine=powershell.exe
+0Parameters=-ExecutionPolicy Bypass -File \\$domain\NETLOGON\Show-LoginSplash.ps1
+"@ | Out-File "$userScriptsPath\scripts.ini" -Encoding Unicode
+
+    $scriptsExtensionPair = "[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]"
+    $gpoAdObject2 = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase $gpoAdPath -Properties gPCUserExtensionNames, versionNumber
+    if ($gpoAdObject2) {
+        $currentExt2 = $gpoAdObject2.gPCUserExtensionNames
+        if (-not $currentExt2 -or $currentExt2 -notlike "*42B5FAAE*") {
+            Set-ADObject -Identity $gpoAdObject2.DistinguishedName -Replace @{ gPCUserExtensionNames = "$currentExt2$scriptsExtensionPair" }
+            $newVersion2 = [int]$gpoAdObject2.versionNumber + 65537
+            Set-ADObject -Identity $gpoAdObject2.DistinguishedName -Replace @{ versionNumber = $newVersion2 }
+            $gptIniPath2 = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\gpt.ini"
+            (Get-Content $gptIniPath2) -replace '^Version=\d+', "Version=$newVersion2" | Set-Content $gptIniPath2
+        }
+    }
+    Write-Host "  Splash registered as a User Logon script on '$GpoName' - the employee's real name is drawn on top live at logon, no separate image per person needed." -ForegroundColor Green
 } else {
     Write-Host "  Splash image not found at $SplashPng - export a PNG from your Illustrator file and place it there, then rerun this section." -ForegroundColor Yellow
 }
