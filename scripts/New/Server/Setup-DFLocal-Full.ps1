@@ -52,6 +52,19 @@ $domainDN = (Get-ADDomain).DistinguishedName
 $usersOU  = "OU=Users,OU=Domech,$domainDN"
 $groupsOU = "OU=Groups,OU=Domech,$domainDN"
 
+# ---- Remove stale shares from before the Salary/Purchase consolidation ----
+# Setup only ever creates shares, never removes ones no longer in config -
+# these two were separate top-level shares before Salary/Purchase became
+# subfolders inside SalaryWagesPurchase$. Named explicitly rather than
+# diffing against config, since blindly removing "any share not in config"
+# could delete something unrelated an admin added by hand.
+foreach ($staleShare in @("Salary$", "Purchase$")) {
+    if (Get-SmbShare -Name $staleShare -ErrorAction SilentlyContinue) {
+        Remove-SmbShare -Name $staleShare -Force
+        Write-Host "Removed stale share '$staleShare' (superseded by SalaryWagesPurchase\$ subfolders)." -ForegroundColor Yellow
+    }
+}
+
 # ---- Folders + shares ----
 Write-Host "Creating data folders and shares..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Path $DataRoot -Force | Out-Null
