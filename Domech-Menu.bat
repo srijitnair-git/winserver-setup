@@ -96,23 +96,25 @@ goto newmenu
 :newserver
 cls
 echo -- New \ Server --
-echo   1. Prepare D: data drive (reclaim old RAID disk, extend, shadow copies)
-echo   1b. Reformat D: disk fully to Basic/GPT (fixes Dynamic Disk quirks)
-echo   2. Install AD Forest (Step 1 - NTDS/SYSVOL on D:, reboots after)
-echo   3. Post-promotion setup (Step 2 - DNS/OUs/groups/hardening)
-echo   4. Full DF.local setup (users, shares, ACLs, drive maps, branding)
-echo   5. Deploy "Ensure Required Services" GPO (startup + logon task)
-echo   6. Restrict C: drive access for standard users (D: + user folders only)
+echo   1. Set server static IP (run FIRST - everything else assumes this)
+echo   2. Prepare D: data drive (reclaim old RAID disk, extend, shadow copies)
+echo   2b. Reformat D: disk fully to Basic/GPT (fixes Dynamic Disk quirks)
+echo   3. Install AD Forest (Step 1 - NTDS/SYSVOL on D:, reboots after)
+echo   4. Post-promotion setup (Step 2 - DNS/OUs/groups/hardening)
+echo   5. Full DF.local setup (users, shares, ACLs, drive maps, branding)
+echo   6. Deploy "Ensure Required Services" GPO (startup + logon task)
+echo   7. Restrict C: drive access for standard users (D: + user folders only)
 echo   0. Back
 echo.
 set /p c="Choose an option: "
-if "%c%"=="1" call :run "New\Server\0-Prepare-DataDrive.ps1"
-if "%c%"=="1b" call :run "New\Server\0b-Reformat-DataDrive-Basic.ps1"
-if "%c%"=="2" call :run "New\Server\1-Install-ADForest.ps1"
-if "%c%"=="3" call :run "New\Server\2-PostPromotion-Setup.ps1"
-if "%c%"=="4" call :run "New\Server\Setup-DFLocal-Full.ps1"
-if "%c%"=="5" call :run "New\Server\Deploy-EnsureServicesGPO.ps1"
-if "%c%"=="6" call :run "New\Server\Restrict-CDriveAccess.ps1"
+if "%c%"=="1" call :run "New\Server\Set-ServerStaticIP.ps1"
+if "%c%"=="2" call :run "New\Server\0-Prepare-DataDrive.ps1"
+if "%c%"=="2b" call :run "New\Server\0b-Reformat-DataDrive-Basic.ps1"
+if "%c%"=="3" call :run "New\Server\1-Install-ADForest.ps1"
+if "%c%"=="4" call :run "New\Server\2-PostPromotion-Setup.ps1"
+if "%c%"=="5" call :run "New\Server\Setup-DFLocal-Full.ps1"
+if "%c%"=="6" call :run "New\Server\Deploy-EnsureServicesGPO.ps1"
+if "%c%"=="7" call :run "New\Server\Restrict-CDriveAccess.ps1"
 if "%c%"=="0" goto newmenu
 goto newserver
 
