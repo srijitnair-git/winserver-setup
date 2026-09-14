@@ -47,17 +47,22 @@
     { "GroupName": "Common",              "DriveLetter": "L", "ShareName": "Common$",              "FolderName": "Common",                  "ReadOnly": false },
     { "GroupName": "Accounts",            "DriveLetter": "U", "ShareName": "Accounts$",            "FolderName": "Accounts",                "ReadOnly": false },
     { "GroupName": "Tally",               "DriveLetter": "T", "ShareName": "Tally$",               "FolderName": "Tally",                   "ReadOnly": false },
-    { "GroupName": "SalaryWagesPurchase", "DriveLetter": "W", "ShareName": "SalaryWagesPurchase$", "FolderName": "Salary Wages & Purchase", "ReadOnly": false },
+    { "GroupName": "SalaryWagesPurchase", "DriveLetter": "W", "ShareName": "SalaryWagesPurchase$", "FolderName": "Salary Wages & Purchase", "ReadOnly": false,
+      "SubDepartments": [
+        { "GroupName": "Purchase",    "FolderName": "Purchase" },
+        { "GroupName": "SalaryWages", "FolderName": "Salary Wages" }
+      ]
+    },
     { "GroupName": "Backup",              "DriveLetter": "B", "ShareName": "Backup$",              "FolderName": "Backup",                  "ReadOnly": true  }
   ],
-  "_comment_departments": "Salary and Purchase were separate groups/shares before - consolidated into SalaryWagesPurchase (single group, single share) to match the old server's actual single 'Salary Wages & Purchase' folder, which never had 3 separate shares in reality.",
+  "_comment_departments": "Salary and Purchase were separate groups/shares before - consolidated into ONE share (SalaryWagesPurchase$, matching the old server's real single folder), with two subfolders inside it (Purchase, Salary Wages) for people who should only see their own slice. SalaryWagesPurchase group members (full access) see both; Purchase/SalaryWages group members see only their own subfolder - access-based enumeration hides the other one from them entirely, it doesn't just deny opening it.",
   "Users": [
     { "Sam": "gokul",    "Name": "Gokul G",          "Groups": ["Workstation","Backup","SalaryWagesPurchase","Tally","Accounts","Common"] },
     { "Sam": "rahul",    "Name": "Rahul Koli",       "Groups": ["Workstation","Backup","SalaryWagesPurchase","Tally","Accounts","Common"] },
     { "Sam": "priyanka", "Name": "Priyanka Jadhav",  "Groups": ["Workstation","SalaryWagesPurchase","Backup","Tally","Common"] },
     { "Sam": "supriya",  "Name": "Supriya Lawand",   "Groups": ["Workstation","SalaryWagesPurchase","Backup","Tally","Common"] },
-    { "Sam": "mansi",    "Name": "Mansi Salve",      "Groups": ["Workstation","SalaryWagesPurchase","Backup","Tally","Common"] },
-    { "Sam": "sneha",    "Name": "Sneha Jatekar",    "Groups": ["Workstation","SalaryWagesPurchase","Backup","Tally","Common"] },
+    { "Sam": "mansi",    "Name": "Mansi Salve",      "Groups": ["Workstation","Purchase","Backup","Tally","Common"] },
+    { "Sam": "sneha",    "Name": "Sneha Jatekar",    "Groups": ["Workstation","SalaryWages","Backup","Tally","Common"] },
     { "Sam": "nisha",    "Name": "Nisha Shinde",     "Groups": ["Workstation","Backup","Tally","Common"] },
     { "Sam": "prakash",  "Name": "Prakash Padukone", "Groups": ["Workstation","Tally","Common"] },
     { "Sam": "balaji",   "Name": "Balaji TKE",       "Groups": ["Workstation","Tally","Accounts","Common"] },

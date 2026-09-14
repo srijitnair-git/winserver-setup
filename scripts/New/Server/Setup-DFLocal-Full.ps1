@@ -61,6 +61,9 @@ foreach ($d in $Departments) {
     if (-not (Get-SmbShare -Name $d.ShareName -ErrorAction SilentlyContinue)) {
         New-SmbShare -Name $d.ShareName -Path $path -FullAccess "DF\Domain Admins" | Out-Null
     }
+    foreach ($sub in $d.SubDepartments) {
+        New-Item -ItemType Directory -Path (Join-Path $path $sub.FolderName) -Force | Out-Null
+    }
 }
 
 # ---- Groups ----
@@ -68,6 +71,11 @@ Write-Host "Creating security groups..." -ForegroundColor Cyan
 foreach ($d in $Departments) {
     if (-not (Get-ADGroup -Filter "Name -eq '$($d.GroupName)'" -ErrorAction SilentlyContinue)) {
         New-ADGroup -Name $d.GroupName -GroupScope Global -GroupCategory Security -Path $groupsOU
+    }
+    foreach ($sub in $d.SubDepartments) {
+        if (-not (Get-ADGroup -Filter "Name -eq '$($sub.GroupName)'" -ErrorAction SilentlyContinue)) {
+            New-ADGroup -Name $sub.GroupName -GroupScope Global -GroupCategory Security -Path $groupsOU
+        }
     }
 }
 if (-not (Get-ADGroup -Filter "Name -eq '$WorkstationGroupName'" -ErrorAction SilentlyContinue)) {
@@ -87,7 +95,33 @@ foreach ($d in $Departments) {
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "DF\$($d.GroupName)", $ntfsRight, "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl.AddAccessRule($rule)
+
+    # Sub-department groups (e.g. Purchase, SalaryWages inside SalaryWagesPurchase):
+    # traverse-only on this parent folder so they can reach their own subfolder,
+    # full rights on that subfolder itself. Access-based enumeration (below)
+    # hides the subfolders they DON'T have rights to, rather than just denying
+    # them on open - so Mansi never even sees "Salary Wages" listed, and vice versa.
+    foreach ($sub in $d.SubDepartments) {
+        $traverseRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "DF\$($sub.GroupName)", "ReadAndExecute", "None", "None", "Allow")
+        $acl.AddAccessRule($traverseRule)
+    }
     Set-Acl -Path $path -AclObject $acl
+
+    foreach ($sub in $d.SubDepartments) {
+        Grant-SmbShareAccess -Name $d.ShareName -AccountName "DF\$($sub.GroupName)" -AccessRight Full -Force | Out-Null
+
+        $subPath = Join-Path $path $sub.FolderName
+        $subAcl = Get-Acl $subPath
+        $subRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "DF\$($sub.GroupName)", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $subAcl.AddAccessRule($subRule)
+        Set-Acl -Path $subPath -AclObject $subAcl
+    }
+
+    if ($d.SubDepartments) {
+        Set-SmbShare -Name $d.ShareName -FolderEnumerationMode AccessBased -Force
+    }
 }
 
 # ---- Users ----
@@ -200,6 +234,21 @@ $departmentDriveEntries = foreach ($d in $Departments) {
     </Filters>
   </Drive>
 "@
+    # Sub-department members (e.g. Purchase, SalaryWages) aren't in the main
+    # group, so they need their own filtered entry for the SAME drive letter
+    # and UNC path - access-based enumeration on the share means they'll only
+    # ever see their own subfolder once mounted, not the other one.
+    foreach ($sub in $d.SubDepartments) {
+        $subSid = (Get-ADGroup $sub.GroupName).SID.Value
+        @"
+  <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($d.DriveLetter):" status="$($d.DriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
+    <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="$($d.FolderName)" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
+    <Filters>
+      <FilterGroup bool="AND" not="0" name="$($sub.GroupName)" sid="$subSid" userContext="1" primaryGroup="0" localGroup="0"/>
+    </Filters>
+  </Drive>
+"@
+    }
 }
 
 # Personal drive per user - filtered by USER (not group), so each person
