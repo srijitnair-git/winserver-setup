@@ -6,9 +6,9 @@ you need - it runs everything in the order that actually works:
   1. Stop the staff GPOs applying to admin accounts (do this FIRST, or step 2
      just gets undone at the next logon)
   2. Repair this admin profile - Explorer / Settings / Control Panel / installers
-  3. Archive the old pre-consolidation Salary and Purchase folders
-  4. Users, groups, shares, NTFS permissions, drive maps, branding
-  5. C: drive restriction for staff (admins excluded)
+  3. Remove the C: drive restriction completely
+  4. Clear the old pre-consolidation Salary and Purchase folders
+  5. Users, groups, shares, NTFS permissions, drive maps, branding
   6. Ensure Required Services GPO
   7. Refresh policy and report what still needs a manual logoff
 
@@ -47,31 +47,14 @@ foreach ($gpoName in $staffGpos) {
 Write-DomechLog "===== STEP 2/7: Repair this admin profile =====" -Level Info
 & "$ScriptsRoot\Repair-UserProfile.ps1"
 
-Write-DomechLog "===== STEP 3/7: Archive old Salary / Purchase folders =====" -Level Info
-# Live data now lives under D:\Domech\Salary Wages & Purchase\. Anything found
-# in the old top-level folders is MOVED aside, never deleted - check the
-# archive yourself and remove it once you're satisfied it's junk.
-foreach ($p in @("D:\Domech\Salary", "D:\Domech\Purchase")) {
-    if (-not (Test-Path $p)) {
-        Write-DomechLog "$p doesn't exist - nothing to do." -Level Info
-        continue
-    }
-    $files = Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue
-    if ($files) {
-        $archive = "D:\Domech\_Archive_$(Split-Path $p -Leaf)_$(Get-Date -Format yyyyMMdd)"
-        Write-DomechLog "$p holds $($files.Count) file(s) - moving to $archive rather than deleting. Review it, then delete by hand." -Level Warning
-        Move-Item $p $archive
-    } else {
-        Write-DomechLog "$p is empty - removing." -Level Info
-        Remove-Item $p -Recurse -Force
-    }
-}
+Write-DomechLog "===== STEP 3/7: Remove the C: drive restriction =====" -Level Info
+& "$PSScriptRoot\Remove-CDriveRestriction.ps1"
 
-Write-DomechLog "===== STEP 4/7: Users, groups, shares, permissions, drive maps =====" -Level Info
+Write-DomechLog "===== STEP 4/7: Clear old Salary / Purchase folders =====" -Level Info
+& "$PSScriptRoot\Remove-OldSalaryPurchaseFolders.ps1"
+
+Write-DomechLog "===== STEP 5/7: Users, groups, shares, permissions, drive maps =====" -Level Info
 & "$PSScriptRoot\Setup-DFLocal-Full.ps1"
-
-Write-DomechLog "===== STEP 5/7: Restrict C: drive for staff =====" -Level Info
-& "$PSScriptRoot\Restrict-CDriveAccess.ps1"
 
 Write-DomechLog "===== STEP 6/7: Ensure Required Services GPO =====" -Level Info
 & "$PSScriptRoot\Deploy-EnsureServicesGPO.ps1"

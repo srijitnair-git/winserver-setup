@@ -75,24 +75,18 @@ foreach ($name in $folders.Keys) {
     $fixed++
 }
 
-# ---- 2. C: drive restriction, admins only ----
+# ---- 2. C: drive restriction ----
 # NoDrives / NoViewOnDrive hide and block C: in Explorer AND in every
-# Open/Save dialog - that's the empty 7-Zip browser and the failing installers.
-# Staff are supposed to have this; admins are not, so only clear it for admins.
-$groupSids = ([Security.Principal.WindowsIdentity]::GetCurrent()).Groups.Value
-$isAdmin   = ($groupSids -contains 'S-1-5-32-544') -or (@($groupSids | Where-Object { $_ -like 'S-1-5-21-*-512' }).Count -gt 0)
-
-if ($isAdmin) {
-    $policyKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
-    foreach ($value in @("NoDrives", "NoViewOnDrive")) {
-        if ((Get-ItemProperty -Path $policyKey -Name $value -ErrorAction SilentlyContinue).$value -ne $null) {
-            Remove-ItemProperty -Path $policyKey -Name $value -Force -ErrorAction SilentlyContinue
-            Write-Line "Cleared '$value' - C: was hidden/blocked for this admin account." -Level Success
-            $fixed++
-        }
+# Open/Save dialog - that's the empty file-browser dialogs and the installers
+# that can't write where they need to. This restriction has been dropped
+# entirely, so clear it for whoever runs this, admin or not.
+$policyKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+foreach ($value in @("NoDrives", "NoViewOnDrive")) {
+    if ($null -ne (Get-ItemProperty -Path $policyKey -Name $value -ErrorAction SilentlyContinue).$value) {
+        Remove-ItemProperty -Path $policyKey -Name $value -Force -ErrorAction SilentlyContinue
+        Write-Line "Cleared '$value' - C: was hidden or blocked for this account." -Level Success
+        $fixed++
     }
-} else {
-    Write-Line "Not an admin account - leaving the C: drive restriction in place (staff are meant to have it)." -Level Info
 }
 
 # ---- 3. Restart Explorer so the changes take effect now ----

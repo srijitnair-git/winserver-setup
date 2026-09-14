@@ -21,7 +21,28 @@ Folder layout under D:\Domech:
 
 Drive mapping is done via Group Policy Preferences (GPP) - no logon script needed,
 works on ANY domain PC the user logs into.
+
+Runs everything by default. Use -Only to fix one thing at a time:
+  -Only Shares      department folders, shares, groups, NTFS permissions
+  -Only Users       user accounts + each person's personal folder and share
+  -Only DriveMaps   the drive-mapping GPO and folder redirection
+  -Only Branding    login splash, wallpaper, lock screen
+Sections are independent but ordered - Shares before Users before DriveMaps -
+so if you run them one at a time, run them in that order the first time.
 #>
+
+param(
+    [ValidateSet('All','Shares','Users','DriveMaps','Branding')]
+    [string]$Only = 'All',
+
+    # Used ONLY for accounts that don't exist yet. ChangePasswordAtLogon is
+    # enforced, so every new user must replace it at their first login.
+    # Left empty on purpose: this repo is public, so no password is stored in
+    # it. If not passed, it is read from Domain.TemporaryUserPassword in the
+    # LOCAL config.json on this server (which updates never overwrite), and
+    # only if that is absent does it ask.
+    [string]$TemporaryPassword
+)
 
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
 Import-Module ActiveDirectory
@@ -51,6 +72,9 @@ $ServerHostname = $env:COMPUTERNAME
 $domainDN = (Get-ADDomain).DistinguishedName
 $usersOU  = "OU=Users,OU=Domech,$domainDN"
 $groupsOU = "OU=Groups,OU=Domech,$domainDN"
+
+if ($Only -in @('All','Shares')) {
+Write-Host "### SECTION: folders, shares, groups, permissions ###" -ForegroundColor Magenta
 
 # ---- Remove stale shares from before the Salary/Purchase consolidation ----
 # Setup only ever creates shares, never removes ones no longer in config -
@@ -137,12 +161,16 @@ foreach ($d in $Departments) {
     }
 }
 
+}   # end SECTION Shares
+
+if ($Only -in @('All','Users')) {
+Write-Host "### SECTION: user accounts and personal folders ###" -ForegroundColor Magenta
+
 # ---- Users ----
-# Accounts that already exist are left completely alone (only their group
-# membership is corrected below). A temporary password is generated here only
-# if there are genuinely new accounts to create - it is never stored in
-# config.json or git, and ChangePasswordAtLogon forces each new user onto
-# their own password at first login, so it lives for one login only.
+# Accounts that already exist are left completely alone - only their group
+# membership is corrected below. The temporary password is used ONLY for
+# accounts that don't exist yet; ChangePasswordAtLogon forces each new user
+# onto their own password at their first login.
 Write-Host "Creating users..." -ForegroundColor Cyan
 $missingUsers = $Users | Where-Object {
     -not (Get-ADUser -Filter "SamAccountName -eq '$($_.Sam)'" -ErrorAction SilentlyContinue)
@@ -150,17 +178,17 @@ $missingUsers = $Users | Where-Object {
 
 $secureTempPwd = $null
 if ($missingUsers) {
-    # Ambiguous characters (0/O, 1/l/I) left out - these get read aloud and typed by hand.
-    $sets = @('ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnpqrstuvwxyz', '23456789', '!#$%&*+-')
-    $chars = foreach ($s in $sets) { $s[(Get-Random -Maximum $s.Length)] }        # one of each class
-    $all = -join $sets
-    $chars += 1..12 | ForEach-Object { $all[(Get-Random -Maximum $all.Length)] }  # pad to 16
-    $tempPassword = -join ($chars | Sort-Object { Get-Random })
-    $secureTempPwd = ConvertTo-SecureString $tempPassword -AsPlainText -Force
-
-    $pwdFile = Join-Path $Config.Paths.ScratchRoot "NewUserTempPassword.txt"
-    "Temporary password for accounts created $(Get-Date -Format 'yyyy-MM-dd HH:mm'):`r`n$tempPassword`r`n`r`nAccounts: $($missingUsers.Sam -join ', ')`r`nEach user must change it at first login." |
-        Out-File $pwdFile -Encoding UTF8
+    # Order: what was passed in, else the local config.json, else ask.
+    $tempPwd = $TemporaryPassword
+    if (-not $tempPwd) { $tempPwd = $Config.Domain.TemporaryUserPassword }
+    if (-not $tempPwd) {
+        Write-Host "  No temporary password set for new accounts." -ForegroundColor Yellow
+        Write-Host "  To stop being asked, add this line inside the \"Domain\" section of $RepoRoot\config.json:" -ForegroundColor Yellow
+        Write-Host "      `"TemporaryUserPassword`": `"YourPasswordHere`"," -ForegroundColor Yellow
+        Write-Host "  That file is local to this server and is never uploaded." -ForegroundColor Yellow
+        $tempPwd = Read-Host "  Temporary password to use for the new accounts"
+    }
+    $secureTempPwd = ConvertTo-SecureString $tempPwd -AsPlainText -Force
     Write-Host "  Creating $($missingUsers.Count) new account(s): $($missingUsers.Sam -join ', ')" -ForegroundColor Cyan
 }
 
@@ -177,14 +205,13 @@ foreach ($u in $Users) {
 if ($missingUsers) {
     Write-Host ""
     Write-Host "  ================================================================" -ForegroundColor Yellow
-    Write-Host "   TEMPORARY PASSWORD for the new accounts: $tempPassword" -ForegroundColor Yellow
-    Write-Host "   Give it to: $($missingUsers.Sam -join ', ')" -ForegroundColor Yellow
-    Write-Host "   Each is forced to set their own password at first login." -ForegroundColor Yellow
-    Write-Host "   Also saved to: $pwdFile" -ForegroundColor Yellow
+    Write-Host "   Created: $($missingUsers.Sam -join ', ')" -ForegroundColor Yellow
+    Write-Host "   They all start with the temporary password you set." -ForegroundColor Yellow
+    Write-Host "   Each must set their own password at first login." -ForegroundColor Yellow
     Write-Host "  ================================================================" -ForegroundColor Yellow
     Write-Host ""
 } else {
-    Write-Host "  All accounts already exist - no new passwords needed, existing ones untouched." -ForegroundColor Green
+    Write-Host "  All accounts already exist - passwords and settings untouched." -ForegroundColor Green
 }
 
 # ---- Workstation folder tree: Personal (per-user) + Systems (per-PC) ----
@@ -258,6 +285,11 @@ foreach ($hostname in $Config.Workstations) {
 }
 Write-Host "  $($Config.Workstations.Count) per-PC Systems folders ready under $systemsRoot" -ForegroundColor Green
 
+}   # end SECTION Users
+
+if ($Only -in @('All','DriveMaps')) {
+Write-Host "### SECTION: drive mappings and folder redirection ###" -ForegroundColor Magenta
+
 # ---- Auto-mount drives via Group Policy Preferences ----
 # GPP Drive Maps live in the GPO's Drives.xml under SYSVOL, keyed by group SID.
 # There is no native New-GPPref cmdlet for drive maps, so we write the XML directly.
@@ -271,7 +303,14 @@ $gpoPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\User\Preferences\Driv
 New-Item -ItemType Directory -Path $gpoPath -Force | Out-Null
 
 $departmentDriveEntries = foreach ($d in $Departments) {
-    $sid = (Get-ADGroup $d.GroupName).SID.Value
+    # Guard so this section can be run on its own with -Only DriveMaps: if the
+    # groups haven't been created yet, skip rather than abort the whole run.
+    $depGroup = Get-ADGroup -Filter "Name -eq '$($d.GroupName)'" -ErrorAction SilentlyContinue
+    if (-not $depGroup) {
+        Write-Host "  Skipping '$($d.GroupName)' drive - group doesn't exist yet (run -Only Shares first)." -ForegroundColor Yellow
+        continue
+    }
+    $sid = $depGroup.SID.Value
     $uncPath = "\\$ServerHostname\$($d.ShareName)"
     @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($d.DriveLetter):" status="$($d.DriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
@@ -286,7 +325,12 @@ $departmentDriveEntries = foreach ($d in $Departments) {
     # and UNC path - access-based enumeration on the share means they'll only
     # ever see their own subfolder once mounted, not the other one.
     foreach ($sub in $d.SubDepartments) {
-        $subSid = (Get-ADGroup $sub.GroupName).SID.Value
+        $subGroup = Get-ADGroup -Filter "Name -eq '$($sub.GroupName)'" -ErrorAction SilentlyContinue
+        if (-not $subGroup) {
+            Write-Host "  Skipping '$($sub.GroupName)' drive - group doesn't exist yet." -ForegroundColor Yellow
+            continue
+        }
+        $subSid = $subGroup.SID.Value
         @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($d.DriveLetter):" status="$($d.DriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
     <Properties action="U" thisDrive="NOCHANGE" allDrives="NOCHANGE" userName="" path="$uncPath" label="$($d.FolderName)" persistent="1" useLetter="1" letter="$($d.DriveLetter)"/>
@@ -301,7 +345,12 @@ $departmentDriveEntries = foreach ($d in $Departments) {
 # Personal drive per user - filtered by USER (not group), so each person
 # only ever sees their own home drive, mounted at the same letter for everyone.
 $personalDriveEntries = foreach ($u in $Users) {
-    $userSid = (Get-ADUser $u.Sam).SID.Value
+    $adUser = Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue
+    if (-not $adUser) {
+        Write-Host "  Skipping personal drive for '$($u.Sam)' - account doesn't exist yet (run -Only Users first)." -ForegroundColor Yellow
+        continue
+    }
+    $userSid = $adUser.SID.Value
     $uncPath = "\\$ServerHostname\$($u.Sam)$"
     @"
   <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}" name="$($PersonalDriveLetter):" status="$($PersonalDriveLetter):" image="2" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
@@ -379,6 +428,11 @@ foreach ($regName in $shellFolderMap.Keys) {
 }
 Write-Host "  Desktop/Documents/Downloads/Pictures will redirect to each user's personal share after next login." -ForegroundColor Green
 
+}   # end SECTION DriveMaps
+
+if ($Only -in @('All','Branding')) {
+Write-Host "### SECTION: branding (splash, wallpaper, lock screen) ###" -ForegroundColor Magenta
+
 # ---- Post-login splash (image popup, registered directly as a GPO User Logon script) ----
 # Previously this just copied the files to NETLOGON with a note to link it
 # manually in GPMC - that manual step was never done on-site, so the splash
@@ -455,4 +509,6 @@ if (Test-Path $LockScreenPng) {
     Write-Host "  Lock screen image not found at $LockScreenPng - export one and rerun this section." -ForegroundColor Yellow
 }
 
-Write-Host "`nDone. Test by logging in as one user on one workstation: department drives + their personal '$($PersonalDriveLetter):' drive should auto-mount, Desktop/Documents/Downloads/Pictures should redirect to their personal share, the splash should appear, and wallpaper/lock screen should apply - after 'gpupdate /force' + relogin." -ForegroundColor Green
+}   # end SECTION Branding
+
+Write-Host "`nDone (-Only $Only). Sign a user out and back in on a workstation to test: department drives and their personal '$($PersonalDriveLetter):' drive should mount, and Desktop/Documents/Downloads/Pictures should point at their personal share." -ForegroundColor Green
