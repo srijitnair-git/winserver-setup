@@ -87,22 +87,41 @@ function Block-DomainAdminsFromGPO {
         [Parameter(Mandatory=$true)][string]$GpoName,
         [Parameter(Mandatory=$true)][string]$DomainDN
     )
+    # "Apply Group Policy" extended right.
+    $applyGpoRight = [guid]"edacfd8f-ffb3-11d1-b41d-00a0c968f939"
     try {
         $domainAdminsSid = (Get-ADGroup "Domain Admins").SID
-        $gpoAdPath = "CN=Policies,CN=System,$DomainDN"
-        $gpoObject = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase $gpoAdPath -Properties nTSecurityDescriptor
-        if ($gpoObject) {
-            $acl = $gpoObject.nTSecurityDescriptor
-            $denyRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-                $domainAdminsSid, "ExtendedRight", "Deny", [guid]"edacfd8f-ffb3-11d1-b41d-00a0c968f939")
-            $acl.AddAccessRule($denyRule)
-            Set-ADObject -Identity $gpoObject.DistinguishedName -Replace @{nTSecurityDescriptor = $acl}
-            Write-DomechLog "Domain Admins excluded from '$GpoName' - IT/admin accounts won't get settings meant for regular staff." -Level Success
+        $gpoObject = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase "CN=Policies,CN=System,$DomainDN"
+        if (-not $gpoObject) {
+            Write-DomechLog "Could not find '$GpoName' AD object to exclude Domain Admins - do this manually in GPMC: select the GPO > Delegation tab > Advanced > Domain Admins > tick Deny on 'Apply group policy'." -Level Warning
+            return
+        }
+
+        # Write the ACE through the AD: drive with Set-Acl. The previous version
+        # used Set-ADObject -Replace nTSecurityDescriptor, which does not reliably
+        # persist a modified descriptor - the deny silently never landed, and
+        # Administrator kept receiving the staff folder redirection and C: drive
+        # restriction. Always verify by reading it back (below) rather than
+        # trusting that the write succeeded.
+        $adPath = "AD:\$($gpoObject.DistinguishedName)"
+        $acl = Get-Acl -Path $adPath
+        $denyRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+            $domainAdminsSid, "ExtendedRight", "Deny", $applyGpoRight)
+        $acl.AddAccessRule($denyRule)
+        Set-Acl -Path $adPath -AclObject $acl
+
+        $confirmed = (Get-Acl -Path $adPath).Access | Where-Object {
+            $_.ObjectType          -eq $applyGpoRight -and
+            $_.AccessControlType   -eq 'Deny'         -and
+            $_.IdentityReference.Value -like "*Domain Admins*"
+        }
+        if ($confirmed) {
+            Write-DomechLog "Verified: Domain Admins are denied 'Apply group policy' on '$GpoName' - admin accounts no longer receive staff settings." -Level Success
         } else {
-            Write-DomechLog "Could not find '$GpoName' AD object to exclude Domain Admins - do this manually in GPMC: GPO Scope tab > Delegation > Advanced > Domain Admins > Deny 'Apply group policy'." -Level Warning
+            Write-DomechLog "WROTE the deny on '$GpoName' but reading it back does NOT show it - the exclusion did not take. Set it by hand in GPMC: select the GPO > Delegation tab > Advanced > Domain Admins > tick Deny on 'Apply group policy'." -Level Error
         }
     } catch {
-        Write-DomechLog "Automatic exclusion of Domain Admins from '$GpoName' failed: $($_.Exception.Message)" -Level Warning
-        Write-DomechLog "Do it manually in GPMC: edit '$GpoName' > Delegation tab > Advanced > Domain Admins > Deny 'Apply group policy'." -Level Warning
+        Write-DomechLog "Automatic exclusion of Domain Admins from '$GpoName' failed: $($_.Exception.Message)" -Level Error
+        Write-DomechLog "Do it by hand in GPMC: select '$GpoName' > Delegation tab > Advanced > Domain Admins > tick Deny on 'Apply group policy'." -Level Warning
     }
 }

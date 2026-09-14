@@ -138,11 +138,32 @@ foreach ($d in $Departments) {
 }
 
 # ---- Users ----
-# Temporary shared password for initial rollout, typed in here rather than
-# stored in config.json - ChangePasswordAtLogon forces everyone onto their
-# own password at first login anyway, so it only needs to exist for one day.
+# Accounts that already exist are left completely alone (only their group
+# membership is corrected below). A temporary password is generated here only
+# if there are genuinely new accounts to create - it is never stored in
+# config.json or git, and ChangePasswordAtLogon forces each new user onto
+# their own password at first login, so it lives for one login only.
 Write-Host "Creating users..." -ForegroundColor Cyan
-$secureTempPwd = Read-Host "Enter the shared temporary password for new user accounts" -AsSecureString
+$missingUsers = $Users | Where-Object {
+    -not (Get-ADUser -Filter "SamAccountName -eq '$($_.Sam)'" -ErrorAction SilentlyContinue)
+}
+
+$secureTempPwd = $null
+if ($missingUsers) {
+    # Ambiguous characters (0/O, 1/l/I) left out - these get read aloud and typed by hand.
+    $sets = @('ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnpqrstuvwxyz', '23456789', '!#$%&*+-')
+    $chars = foreach ($s in $sets) { $s[(Get-Random -Maximum $s.Length)] }        # one of each class
+    $all = -join $sets
+    $chars += 1..12 | ForEach-Object { $all[(Get-Random -Maximum $all.Length)] }  # pad to 16
+    $tempPassword = -join ($chars | Sort-Object { Get-Random })
+    $secureTempPwd = ConvertTo-SecureString $tempPassword -AsPlainText -Force
+
+    $pwdFile = Join-Path $Config.Paths.ScratchRoot "NewUserTempPassword.txt"
+    "Temporary password for accounts created $(Get-Date -Format 'yyyy-MM-dd HH:mm'):`r`n$tempPassword`r`n`r`nAccounts: $($missingUsers.Sam -join ', ')`r`nEach user must change it at first login." |
+        Out-File $pwdFile -Encoding UTF8
+    Write-Host "  Creating $($missingUsers.Count) new account(s): $($missingUsers.Sam -join ', ')" -ForegroundColor Cyan
+}
+
 foreach ($u in $Users) {
     if (-not (Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue)) {
         New-ADUser -Name $u.Name -SamAccountName $u.Sam -UserPrincipalName "$($u.Sam)@DF.local" `
@@ -152,7 +173,19 @@ foreach ($u in $Users) {
         Add-ADGroupMember -Identity $g -Members $u.Sam -ErrorAction SilentlyContinue
     }
 }
-Write-Host "All new users created with the shared temporary password just entered - each is forced to set their own at first login." -ForegroundColor Yellow
+
+if ($missingUsers) {
+    Write-Host ""
+    Write-Host "  ================================================================" -ForegroundColor Yellow
+    Write-Host "   TEMPORARY PASSWORD for the new accounts: $tempPassword" -ForegroundColor Yellow
+    Write-Host "   Give it to: $($missingUsers.Sam -join ', ')" -ForegroundColor Yellow
+    Write-Host "   Each is forced to set their own password at first login." -ForegroundColor Yellow
+    Write-Host "   Also saved to: $pwdFile" -ForegroundColor Yellow
+    Write-Host "  ================================================================" -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Host "  All accounts already exist - no new passwords needed, existing ones untouched." -ForegroundColor Green
+}
 
 # ---- Workstation folder tree: Personal (per-user) + Systems (per-PC) ----
 # Runs AFTER user creation above, since the ACL grants below need the AD
