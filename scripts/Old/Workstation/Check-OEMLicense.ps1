@@ -192,7 +192,7 @@ OPTION 1 — Check the local machine only (run on each PC):
 
 OPTION 2 — Check multiple machines remotely from the server
            (requires WinRM enabled on targets and domain admin rights):
-    .\Check-OEMLicense.ps1 -ComputerNames "RAHUL-DT","BALAJI-DT","PRIYANKA-DT","AUDITOR-NEW-DT","NISHA-NEW-DT","SURESH-SIR","JOSEPH-LT","PRAKASH-DT"
+    .\Check-OEMLicense.ps1 -ComputerNames "RAHUL-DF","BALAJI-DF","PRIYANKA-DF","AUDITOR-DF","NISHA-DF","SURESH-SIR","JOSEPH-LT","PRAKASH-DF"
 
 OPTION 3 — Check every domain-joined computer automatically:
     Import-Module ActiveDirectory

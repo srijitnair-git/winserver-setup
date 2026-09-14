@@ -6,7 +6,7 @@ a per-machine, per-user backup folder.
 Works two ways:
   - Run LOCALLY on the workstation itself (no -ComputerName needed, or pass
     its own name) - reads C:\Users directly, no WinRM/remoting required.
-  - Run FROM THE SERVER against a remote machine (-ComputerName RAHUL-DT) -
+  - Run FROM THE SERVER against a remote machine (-ComputerName RAHUL-DF) -
     uses PowerShell remoting over the admin share, same as before.
 
 Destination is keyed by computer name only (no date suffix) - if a backup

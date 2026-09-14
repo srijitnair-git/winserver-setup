@@ -18,28 +18,26 @@
     "_comment": "Only the 'scripts' folder's contents belong in this repo - config.json and Logs stay local, never pushed."
   },
   "Workstations": [
-    "GOKUL-DT", "RAHUL-DT", "PRIYANKA-DT", "BALAJI-DT", "NISHA-NEW-DT",
-    "SNEHA-DT", "AUDITOR-NEW-DT", "MANSI-NEW-DT", "AUDITOR-PC",
-    "PRAKASH-DT", "SUPRIYA-DT-NEW", "JOSEPH-LT"
+    "GOKUL-DF", "RAHUL-DF", "PRIYANKA-DF", "BALAJI-DF", "NISHA-DF",
+    "SNEHA-DF", "AUDITOR-DF", "MANSI-DF",
+    "PRAKASH-DF", "SUPRIYA-DF", "JOSEPH-LT"
   ],
+  "_comment_workstations": "AUDITOR-PC removed - duplicate of AUDITOR-DF (same person, old machine per the network plan doc which only lists one Auditor drop). NISHA-DF has no static IP yet below - her network drop is still unconfirmed on-site per Domech_IP_Address_Plan.md.",
   "Network": {
     "SubnetPrefixLength": 24,
     "Gateway": "192.168.0.1",
     "DnsServer": "192.168.0.10",
-    "_comment": "DnsServer should be the DF.local DC's own static IP. WorkstationIPs below assigns one static IP per machine - add every hostname from Workstations here.",
+    "_comment": "IPs below follow the real drop-number plan (03_ip_and_network/Domech_IP_Address_Plan.md): 192.168.0.(100 + drop number). DnsServer is the DF.local DC's own static IP.",
     "WorkstationIPs": {
-      "GOKUL-DT": "192.168.0.21",
-      "RAHUL-DT": "192.168.0.22",
-      "PRIYANKA-DT": "192.168.0.23",
-      "BALAJI-DT": "192.168.0.24",
-      "NISHA-NEW-DT": "192.168.0.25",
-      "SNEHA-DT": "192.168.0.26",
-      "AUDITOR-NEW-DT": "192.168.0.27",
-      "MANSI-NEW-DT": "192.168.0.28",
-      "AUDITOR-PC": "192.168.0.29",
-      "PRAKASH-DT": "192.168.0.30",
-      "SUPRIYA-DT-NEW": "192.168.0.31",
-      "JOSEPH-LT": "192.168.0.32"
+      "SNEHA-DF": "192.168.0.110",
+      "MANSI-DF": "192.168.0.115",
+      "PRAKASH-DF": "192.168.0.127",
+      "SUPRIYA-DF": "192.168.0.129",
+      "PRIYANKA-DF": "192.168.0.130",
+      "AUDITOR-DF": "192.168.0.131",
+      "RAHUL-DF": "192.168.0.132",
+      "GOKUL-DF": "192.168.0.133",
+      "BALAJI-DF": "192.168.0.134"
     }
   },
   "Departments": [
