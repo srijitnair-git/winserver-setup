@@ -7,6 +7,18 @@ imran and DELL are deliberately NOT in config.json's Users list - unexplained
 domain-admin accounts on the old server, confirm with owner before adding
 anyone with elevated rights on DF.local.
 
+Folder layout under D:\Domech:
+  <Department shares>       group-based, e.g. Common, Accounts, Tally,
+                             SalaryWagesPurchase, Backup
+  Workstation\Personal\<user>   each user's own share/drive (P: by default),
+                                 Desktop/Documents/Downloads/Pictures redirect
+                                 here. Everyone in Users is a member of the
+                                 "Workstation" group, which can browse the
+                                 Workstation folder itself but not into
+                                 anyone else's Personal subfolder.
+  Workstation\Systems\<pcname>  per-machine data (pre-format backups etc,
+                                 see config.json Paths.BackupRoot), admin-only.
+
 Drive mapping is done via Group Policy Preferences (GPP) - no logon script needed,
 works on ANY domain PC the user logs into.
 #>
@@ -29,8 +41,11 @@ $SplashPng      = $Config.Branding.SplashPng
 $SplashFontTtf  = $Config.Branding.SplashFontTtf
 $WallpaperPng   = $Config.Branding.WallpaperPng
 $LockScreenPng  = $Config.Branding.LockScreenPng
-$PersonalDriveLetter = $Config.Personal.DriveLetter
-$PersonalFolderName  = $Config.Personal.FolderName
+$WorkstationGroupName = $Config.Workstation.GroupName
+$WorkstationFolderName = $Config.Workstation.FolderName
+$PersonalFolderName  = $Config.Workstation.PersonalFolderName
+$SystemsFolderName   = $Config.Workstation.SystemsFolderName
+$PersonalDriveLetter = $Config.Workstation.PersonalDriveLetter
 $ServerHostname = $env:COMPUTERNAME
 
 $domainDN = (Get-ADDomain).DistinguishedName
@@ -54,6 +69,9 @@ foreach ($d in $Departments) {
     if (-not (Get-ADGroup -Filter "Name -eq '$($d.GroupName)'" -ErrorAction SilentlyContinue)) {
         New-ADGroup -Name $d.GroupName -GroupScope Global -GroupCategory Security -Path $groupsOU
     }
+}
+if (-not (Get-ADGroup -Filter "Name -eq '$WorkstationGroupName'" -ErrorAction SilentlyContinue)) {
+    New-ADGroup -Name $WorkstationGroupName -GroupScope Global -GroupCategory Security -Path $groupsOU
 }
 
 # ---- Share + NTFS ACLs (group-based, explicit grants only, no Deny ACEs) ----
@@ -88,12 +106,29 @@ foreach ($u in $Users) {
 }
 Write-Host "Initial passwords written to C:\01_matrix\Scratch\NewUserPasswords.txt - hand these out securely and delete the file after." -ForegroundColor Yellow
 
-# ---- Personal per-user folders + shares (each user's own home drive) ----
+# ---- Workstation folder tree: Personal (per-user) + Systems (per-PC) ----
 # Runs AFTER user creation above, since the ACL grants below need the AD
 # account to already exist.
-Write-Host "Creating personal folders and shares..." -ForegroundColor Cyan
-$personalRoot = Join-Path $DataRoot $PersonalFolderName
+Write-Host "Creating Workstation folder tree..." -ForegroundColor Cyan
+$workstationRoot = Join-Path $DataRoot $WorkstationFolderName
+$personalRoot = Join-Path $workstationRoot $PersonalFolderName
+$systemsRoot  = Join-Path $workstationRoot $SystemsFolderName
+New-Item -ItemType Directory -Path $workstationRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $personalRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $systemsRoot -Force | Out-Null
+
+# The Workstation group gets traverse/list only at the parent level - so
+# Explorer navigation into the tree works - never into other users' Personal
+# subfolders, which stay locked to their owner alone below.
+$acl = Get-Acl $workstationRoot
+$listRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    "DF\$WorkstationGroupName", "ReadAndExecute", "None", "None", "Allow")
+$acl.AddAccessRule($listRule)
+Set-Acl -Path $workstationRoot -AclObject $acl
+# Membership in $WorkstationGroupName is handled by the Users loop above,
+# via each user's "Workstation" entry in config.json's Groups list.
+
+Write-Host "Creating personal folders and shares..." -ForegroundColor Cyan
 $redirectedFolders = @("Desktop","Documents","Downloads","Pictures")
 foreach ($u in $Users) {
     $path = Join-Path $personalRoot $u.Sam
@@ -122,6 +157,25 @@ foreach ($u in $Users) {
     Set-Acl -Path $path -AclObject $acl
 }
 Write-Host "  $($Users.Count) personal folders/shares ready under $personalRoot" -ForegroundColor Green
+
+# ---- Systems: one folder per PC, admin-only, not user-mapped ----
+# Not a per-user share/drive - this is where per-machine data (pre-format
+# backups etc, see Paths.BackupRoot) lives, for IT/backup scripts to use.
+Write-Host "Creating per-PC Systems folders..." -ForegroundColor Cyan
+foreach ($hostname in $Config.Workstations) {
+    $pcPath = Join-Path $systemsRoot $hostname
+    New-Item -ItemType Directory -Path $pcPath -Force | Out-Null
+    $pcAcl = Get-Acl $pcPath
+    $pcAcl.SetAccessRuleProtection($true, $false)
+    $adminOnlyRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "DF\Domain Admins", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $pcSystemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $pcAcl.AddAccessRule($adminOnlyRule)
+    $pcAcl.AddAccessRule($pcSystemRule)
+    Set-Acl -Path $pcPath -AclObject $pcAcl
+}
+Write-Host "  $($Config.Workstations.Count) per-PC Systems folders ready under $systemsRoot" -ForegroundColor Green
 
 # ---- Auto-mount drives via Group Policy Preferences ----
 # GPP Drive Maps live in the GPO's Drives.xml under SYSVOL, keyed by group SID.
