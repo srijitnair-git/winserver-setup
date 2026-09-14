@@ -1,0 +1,104 @@
+{
+  "Domain": {
+    "Name": "DF.local",
+    "NetbiosName": "DF",
+    "AdminUser": "DF\\Administrator"
+  },
+  "Paths": {
+    "DataRoot": "D:\\Domech",
+    "ScriptsRoot": "C:\\01_matrix",
+    "LogsRoot": "C:\\01_matrix\\Logs",
+    "ScratchRoot": "C:\\01_matrix\\Scratch",
+    "BackupRoot": "D:\\WorkstationBackups",
+    "ComputersOU": "OU=Computers,OU=Domech,DC=DF,DC=local"
+  },
+  "GitHubRepo": {
+    "Url": "https://github.com/srijitnair-git/winserver-setup.git",
+    "Branch": "main",
+    "_comment": "Only the 'scripts' folder's contents belong in this repo - config.json and Logs stay local, never pushed."
+  },
+  "Workstations": [
+    "GOKUL-DT", "RAHUL-DT", "PRIYANKA-DT", "BALAJI-DT", "NISHA-NEW-DT",
+    "SNEHA-DT", "AUDITOR-NEW-DT", "MANSI-NEW-DT", "AUDITOR-PC",
+    "PRAKASH-DT", "SUPRIYA-DT-NEW", "JOSEPH-LT"
+  ],
+  "Network": {
+    "SubnetPrefixLength": 24,
+    "Gateway": "192.168.0.1",
+    "DnsServer": "192.168.0.10",
+    "_comment": "DnsServer should be the DF.local DC's own static IP. WorkstationIPs below assigns one static IP per machine - add every hostname from Workstations here.",
+    "WorkstationIPs": {
+      "GOKUL-DT": "192.168.0.21",
+      "RAHUL-DT": "192.168.0.22",
+      "PRIYANKA-DT": "192.168.0.23",
+      "BALAJI-DT": "192.168.0.24",
+      "NISHA-NEW-DT": "192.168.0.25",
+      "SNEHA-DT": "192.168.0.26",
+      "AUDITOR-NEW-DT": "192.168.0.27",
+      "MANSI-NEW-DT": "192.168.0.28",
+      "AUDITOR-PC": "192.168.0.29",
+      "PRAKASH-DT": "192.168.0.30",
+      "SUPRIYA-DT-NEW": "192.168.0.31",
+      "JOSEPH-LT": "192.168.0.32"
+    }
+  },
+  "Departments": [
+    { "GroupName": "Common",      "DriveLetter": "L", "ShareName": "Common$",              "FolderName": "Common",                    "ReadOnly": false },
+    { "GroupName": "Accounts",    "DriveLetter": "U", "ShareName": "Accounts$",            "FolderName": "Accounts",                  "ReadOnly": false },
+    { "GroupName": "Tally",       "DriveLetter": "T", "ShareName": "Tally$",               "FolderName": "Tally",                     "ReadOnly": false },
+    { "GroupName": "Salary",      "DriveLetter": "S", "ShareName": "Salary$",              "FolderName": "Salary",                    "ReadOnly": false },
+    { "GroupName": "SalaryWages", "DriveLetter": "W", "ShareName": "SalaryWagesPurchase$", "FolderName": "Salary Wages & Purchase",   "ReadOnly": false },
+    { "GroupName": "Purchase",    "DriveLetter": "X", "ShareName": "Purchase$",            "FolderName": "Purchase",                  "ReadOnly": false },
+    { "GroupName": "Backup",      "DriveLetter": "B", "ShareName": "Backup$",              "FolderName": "Backup",                    "ReadOnly": true  }
+  ],
+  "Users": [
+    { "Sam": "gokul",    "Name": "Gokul G",          "Groups": ["Backup","Salary","Tally","Accounts","Common"] },
+    { "Sam": "rahul",    "Name": "Rahul Koli",       "Groups": ["Backup","Salary","Tally","Accounts","Common"] },
+    { "Sam": "priyanka", "Name": "Priyanka Jadhav",  "Groups": ["SalaryWages","Purchase","Backup","Salary","Tally","Common"] },
+    { "Sam": "supriya",  "Name": "Supriya Lawand",   "Groups": ["SalaryWages","Purchase","Backup","Salary","Tally","Common"] },
+    { "Sam": "mansi",    "Name": "Mansi Salve",      "Groups": ["Purchase","Backup","Tally","Common"] },
+    { "Sam": "sneha",    "Name": "Sneha Jatekar",    "Groups": ["SalaryWages","Backup","Tally","Common"] },
+    { "Sam": "nisha",    "Name": "Nisha Shinde",     "Groups": ["Backup","Tally","Common"] },
+    { "Sam": "prakash",  "Name": "Prakash Padukone", "Groups": ["Tally","Common"] },
+    { "Sam": "balaji",   "Name": "Balaji TKE",       "Groups": ["Tally","Accounts","Common"] },
+    { "Sam": "joseph",   "Name": "K M Joseph",       "Groups": ["Tally","Accounts","Common"] },
+    { "Sam": "jovel",    "Name": "Jovel Joseph",     "Groups": ["Salary","Tally","Accounts","Common"] },
+    { "Sam": "auditor",  "Name": "Auditor",          "Groups": ["Tally","Common"] },
+    { "Sam": "dinesh",   "Name": "Dinesh Anero",     "Groups": ["Common"] }
+  ],
+  "GPO": {
+    "DriveMapGpoName": "Domech - Drive Mappings",
+    "BrandingGpoName": "Domech - Branding",
+    "EnsureServicesGpoName": "Domech - Ensure Services",
+    "RestrictCDriveGpoName": "Domech - Restrict C Drive"
+  },
+  "Branding": {
+    "SplashPng": "C:\\01_matrix\\Assets\\LoginSplash.png",
+    "SplashFontTtf": "C:\\01_matrix\\Assets\\Fonts\\Geist-Bold.ttf",
+    "WallpaperPng": "C:\\01_matrix\\Assets\\Wallpaper.png",
+    "LockScreenPng": "C:\\01_matrix\\Assets\\LockScreen.png",
+    "_comment": "LoginSplash.png is the background only - the employee's real name is drawn on top live at logon by Show-LoginSplash.ps1, using SplashFontTtf so it doesn't need the font installed on the workstation."
+  },
+  "ShadowCopy": {
+    "MaxStoragePercent": 10,
+    "Schedule": ["07:00", "12:00"]
+  },
+  "Personal": {
+    "DriveLetter": "P",
+    "FolderName": "Personal",
+    "_comment": "Each user gets D:\\Domech\\Personal\\<username>, shared as <username>$, mapped to P: for that user only. Desktop/Documents/Downloads/Pictures redirect there automatically."
+  },
+  "RustDesk": {
+    "RendezvousServer": ""
+  },
+  "RequiredServices": ["WinRM", "Spooler", "RustDesk Service"],
+  "WingetApps": [
+    "7zip.7zip",
+    "RustDesk.RustDesk",
+    "SumatraPDF.SumatraPDF",
+    "FastStone.FastStoneImageViewer",
+    "VideoLAN.VLC",
+    "Google.Chrome",
+    "Microsoft.PowerShell"
+  ]
+}
