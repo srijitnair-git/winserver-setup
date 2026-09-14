@@ -21,8 +21,7 @@ Requires explicitly typing CONFIRM at the prompt - no -Force flag to skip it.
 $ScriptsRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $RepoRoot    = Split-Path $ScriptsRoot -Parent
 . "$ScriptsRoot\DomechCommon.ps1"
-$Config = Get-Content "$RepoRoot\config.json" -Raw | ConvertFrom-Json
-Start-DomechLog -ScriptName $MyInvocation.MyCommand.Name -LogRoot $Config.Paths.LogsRoot
+$Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
 $dPartition = Get-Partition | Where-Object { $_.DriveLetter -eq 'D' }
 if (-not $dPartition) {

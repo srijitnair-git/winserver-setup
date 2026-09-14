@@ -10,8 +10,7 @@ database off the OS volume). Reboots automatically at the end.
 $ScriptsRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $RepoRoot    = Split-Path $ScriptsRoot -Parent
 . "$ScriptsRoot\DomechCommon.ps1"
-$Config = Get-Content "$RepoRoot\config.json" -Raw | ConvertFrom-Json
-Start-DomechLog -ScriptName $MyInvocation.MyCommand.Name -LogRoot $Config.Paths.LogsRoot
+$Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
 $DomainName  = $Config.Domain.Name
 $NetbiosName = $Config.Domain.NetbiosName

@@ -13,8 +13,7 @@ Looks up this machine's own hostname in config.json's Network.WorkstationIPs
 $ScriptsRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $RepoRoot    = Split-Path $ScriptsRoot -Parent
 . "$ScriptsRoot\DomechCommon.ps1"
-$Config = Get-Content "$RepoRoot\config.json" -Raw | ConvertFrom-Json
-Start-DomechLog -ScriptName $MyInvocation.MyCommand.Name -LogRoot $Config.Paths.LogsRoot
+$Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
 $hostname = $env:COMPUTERNAME
 $staticIp = $Config.Network.WorkstationIPs.$hostname
