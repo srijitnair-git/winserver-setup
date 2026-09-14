@@ -275,6 +275,35 @@ $($personalDriveEntries -join "`n")
 </Drives>
 "@ | Out-File "$gpoPath\Drives.xml" -Encoding UTF8
 
+# Writing Drives.xml into SYSVOL alone does NOT tell Windows clients that
+# this GPO contains Drive Maps preferences - there's no New-GPPref cmdlet
+# for it, and unlike Set-GPRegistryValue (which self-registers its own
+# extension), a hand-written XML file needs the extension pair added to
+# the GPO's AD object manually, or clients skip it entirely - which is
+# exactly the "drives don't mount, no error, nothing in gpresult" symptom
+# seen on-site. This registers Drive Maps and bumps the GPO version so
+# already-logged-on machines pick up the change on their next refresh.
+Write-Host "Registering the Drive Maps extension on the GPO..." -ForegroundColor Cyan
+$driveMapsExtensionPair = "[{5794DAFD-BE60-433f-88A2-1A31939AC01F}{935D1B74-9CB8-4e3c-9914-7DD559B7A417}]"
+$gpoAdPath = "CN=Policies,CN=System,$domainDN"
+$gpoAdObject = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase $gpoAdPath -Properties gPCUserExtensionNames, versionNumber
+if ($gpoAdObject) {
+    $currentExt = $gpoAdObject.gPCUserExtensionNames
+    if (-not $currentExt -or $currentExt -notlike "*935D1B74-9CB8-4e3c-9914-7DD559B7A417*") {
+        $newExt = "$currentExt$driveMapsExtensionPair"
+        Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ gPCUserExtensionNames = $newExt }
+        $newVersion = [int]$gpoAdObject.versionNumber + 65537   # bumps both the user and machine version halves
+        Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ versionNumber = $newVersion }
+        $gptIniPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\gpt.ini"
+        (Get-Content $gptIniPath) -replace '^Version=\d+', "Version=$newVersion" | Set-Content $gptIniPath
+        Write-Host "  Drive Maps extension registered, GPO version bumped to $newVersion so it gets reprocessed." -ForegroundColor Green
+    } else {
+        Write-Host "  Drive Maps extension already registered." -ForegroundColor Green
+    }
+} else {
+    Write-Host "  Could not find the GPO's AD object to register the extension - drives will NOT mount until this is done. Investigate manually in ADSI Edit: CN=Policies,CN=System,$domainDN, find the GPO by displayName, add $driveMapsExtensionPair to gPCUserExtensionNames." -ForegroundColor Red
+}
+
 Write-Host "Drive mapping GPO created: department drives + a personal '$($PersonalDriveLetter):' drive per user pointing at their own \\$ServerHostname\<username>`$ share." -ForegroundColor Green
 
 # ---- Redirect Desktop/Documents/Downloads/Pictures to the personal share ----
