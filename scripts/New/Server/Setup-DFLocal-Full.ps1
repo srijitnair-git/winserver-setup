@@ -454,14 +454,21 @@ if ($gpoAdObject) {
     if (-not $currentExt -or $currentExt -notlike "*935D1B74-9CB8-4e3c-9914-7DD559B7A417*") {
         $newExt = "$currentExt$driveMapsExtensionPair"
         Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ gPCUserExtensionNames = $newExt }
-        $newVersion = [int]$gpoAdObject.versionNumber + 65537   # bumps both the user and machine version halves
-        Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ versionNumber = $newVersion }
-        $gptIniPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\gpt.ini"
-        (Get-Content $gptIniPath) -replace '^Version=\d+', "Version=$newVersion" | Set-Content $gptIniPath
-        Write-Host "  Drive Maps extension registered, GPO version bumped to $newVersion so it gets reprocessed." -ForegroundColor Green
+        Write-Host "  Drive Maps extension registered." -ForegroundColor Green
     } else {
         Write-Host "  Drive Maps extension already registered." -ForegroundColor Green
     }
+
+    # Bump the version EVERY time, not only when first registering the
+    # extension. Clients decide whether to re-read a GPO by comparing this
+    # number - leave it unchanged after rewriting Drives.xml and they treat
+    # the policy as unchanged and keep using the drive list they already have,
+    # so a corrected file would never reach anyone.
+    $newVersion = [int]$gpoAdObject.versionNumber + 65537   # bumps both the user and machine halves
+    Set-ADObject -Identity $gpoAdObject.DistinguishedName -Replace @{ versionNumber = $newVersion }
+    $gptIniPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\gpt.ini"
+    (Get-Content $gptIniPath) -replace '^Version=\d+', "Version=$newVersion" | Set-Content $gptIniPath
+    Write-Host "  GPO version bumped to $newVersion so clients reprocess the new drive list." -ForegroundColor Green
 } else {
     Write-Host "  Could not find the GPO's AD object to register the extension - drives will NOT mount until this is done. Investigate manually in ADSI Edit: CN=Policies,CN=System,$domainDN, find the GPO by displayName, add $driveMapsExtensionPair to gPCUserExtensionNames." -ForegroundColor Red
 }
