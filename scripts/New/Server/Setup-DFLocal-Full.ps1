@@ -306,6 +306,12 @@ if ($gpoAdObject) {
 
 Write-Host "Drive mapping GPO created: department drives + a personal '$($PersonalDriveLetter):' drive per user pointing at their own \\$ServerHostname\<username>`$ share." -ForegroundColor Green
 
+# Exclude Domain Admins - without this, Administrator (not in config.json's
+# Users list, so no personal share exists for it) gets its Desktop/Documents
+# folder redirection pointed at a share that doesn't exist, producing
+# "Windows cannot access \\SERVER\Administrator$\Desktop" on login.
+Block-DomainAdminsFromGPO -GpoName $GpoName -DomainDN $domainDN
+
 # ---- Redirect Desktop/Documents/Downloads/Pictures to the personal share ----
 # This is what actually makes it "backup all the user folder" - files land
 # on the server the moment they're saved, not on a schedule. Uses

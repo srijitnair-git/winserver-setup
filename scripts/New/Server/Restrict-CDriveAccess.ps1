@@ -52,32 +52,6 @@ Set-GPRegistryValue -Name $GpoName -Key "HKCU\Software\Microsoft\Windows\Current
 Write-DomechLog "GPO '$GpoName' created/updated: C: hidden and blocked in Explorer for anyone this GPO applies to." -Level Success
 
 # Exclude Domain Admins from this policy so IT retains normal C: access.
-# Group Policy security filtering: deny "Apply Group Policy" to Domain Admins.
-try {
-    $gpoGuid = "{$($gpo.Id)}"
-    $domainAdminsSid = (Get-ADGroup "Domain Admins").SID
-    $params = @{
-        Name       = $GpoName
-        PermissionLevel = "GpoApply"
-        TargetName = "Domain Admins"
-        TargetType = "Group"
-    }
-    # Set-GPPermission only grants Allow; explicitly deny via ADSI for Domain Admins
-    $gpoPath = "CN=Policies,CN=System,$domainDN"
-    $gpoObject = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase $gpoPath -Properties nTSecurityDescriptor
-    if ($gpoObject) {
-        $acl = $gpoObject.nTSecurityDescriptor
-        $denyRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
-            $domainAdminsSid, "ExtendedRight", "Deny", [guid]"edacfd8f-ffb3-11d1-b41d-00a0c968f939")
-        $acl.AddAccessRule($denyRule)
-        Set-ADObject -Identity $gpoObject.DistinguishedName -Replace @{nTSecurityDescriptor = $acl}
-        Write-DomechLog "Domain Admins excluded from this GPO - IT keeps normal C: access." -Level Success
-    } else {
-        Write-DomechLog "Could not find the GPO's AD object to exclude Domain Admins - do this manually in GPMC: GPO Scope tab > Security Filtering / Delegation > deny 'Apply Group Policy' to Domain Admins." -Level Warning
-    }
-} catch {
-    Write-DomechLog "Automatic exclusion of Domain Admins failed: $($_.Exception.Message)" -Level Warning
-    Write-DomechLog "Do it manually in GPMC: edit '$GpoName' > Delegation tab > Advanced > Domain Admins > Deny 'Apply group policy'." -Level Warning
-}
+Block-DomainAdminsFromGPO -GpoName $GpoName -DomainDN $domainDN
 
 Write-DomechLog "Test on one non-admin user login: C: should be hidden/blocked, D: and mapped drives should work normally." -Level Info

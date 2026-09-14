@@ -72,3 +72,37 @@ function Initialize-DomechContext {
 
     return $config
 }
+
+function Block-DomainAdminsFromGPO {
+    <#
+    Denies "Apply Group Policy" to Domain Admins on the given GPO, so IT/admin
+    accounts (Administrator, etc.) never receive settings meant for regular
+    staff - department drive maps, personal folder redirection, C: drive
+    restriction. Without this, Administrator gets folder redirection pointed
+    at a personal share that doesn't exist for it (it's not in config.json's
+    Users list), producing "Windows cannot access \\SERVER\Administrator$\..."
+    errors on login.
+    #>
+    param(
+        [Parameter(Mandatory=$true)][string]$GpoName,
+        [Parameter(Mandatory=$true)][string]$DomainDN
+    )
+    try {
+        $domainAdminsSid = (Get-ADGroup "Domain Admins").SID
+        $gpoAdPath = "CN=Policies,CN=System,$DomainDN"
+        $gpoObject = Get-ADObject -Filter "displayName -eq '$GpoName'" -SearchBase $gpoAdPath -Properties nTSecurityDescriptor
+        if ($gpoObject) {
+            $acl = $gpoObject.nTSecurityDescriptor
+            $denyRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+                $domainAdminsSid, "ExtendedRight", "Deny", [guid]"edacfd8f-ffb3-11d1-b41d-00a0c968f939")
+            $acl.AddAccessRule($denyRule)
+            Set-ADObject -Identity $gpoObject.DistinguishedName -Replace @{nTSecurityDescriptor = $acl}
+            Write-DomechLog "Domain Admins excluded from '$GpoName' - IT/admin accounts won't get settings meant for regular staff." -Level Success
+        } else {
+            Write-DomechLog "Could not find '$GpoName' AD object to exclude Domain Admins - do this manually in GPMC: GPO Scope tab > Delegation > Advanced > Domain Admins > Deny 'Apply group policy'." -Level Warning
+        }
+    } catch {
+        Write-DomechLog "Automatic exclusion of Domain Admins from '$GpoName' failed: $($_.Exception.Message)" -Level Warning
+        Write-DomechLog "Do it manually in GPMC: edit '$GpoName' > Delegation tab > Advanced > Domain Admins > Deny 'Apply group policy'." -Level Warning
+    }
+}
