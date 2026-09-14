@@ -16,6 +16,16 @@ old OS/data on this disk is not needed - only the RAID array's D: data
 partition is being kept, everything else on it is reclaimed as free space.
 
 Requires explicitly typing CONFIRM at the prompt - no -Force flag to skip it.
+
+NOTE on this hardware: the RAID array shows up as a DYNAMIC disk (Intel
+RST RAID-1 volume), not a plain Basic disk. Get-Disk/Get-Partition often
+can't see Dynamic Disk volumes at all - confirmed on-site where they
+worked once (while the disk still had its original multi-partition
+layout) then stopped seeing it entirely once it collapsed to one
+full-disk volume. This script now detects D: via Get-Volume, which has
+been reliable throughout, and treats "Get-Partition finds nothing" as
+"already done" rather than an error - re-running after the deletion/
+extend has already happened is safe and just skips to shadow copies.
 #>
 
 $ScriptsRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -23,40 +33,55 @@ $RepoRoot    = Split-Path $ScriptsRoot -Parent
 . "$ScriptsRoot\DomechCommon.ps1"
 $Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
-$dPartition = Get-Partition | Where-Object { $_.DriveLetter -eq 'D' }
-if (-not $dPartition) {
-    Write-DomechLog "No D: drive found on this machine - nothing to reclaim around. Aborting." -Level Error
+# Detect D: via Get-Volume, not Get-Partition. On this hardware, D: sits on
+# an Intel RST RAID-1 volume, which Windows manages as a DYNAMIC disk - the
+# modern Get-Disk/Get-Partition cmdlets have a longstanding gap where they
+# often can't see Dynamic Disk (LDM) volumes at all, especially once a disk
+# has collapsed down to one simple volume spanning the whole disk. Get-Volume
+# works reliably here regardless; diskpart also sees these fine if you ever
+# need to double check by hand.
+$dVolume = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
+if (-not $dVolume) {
+    Write-DomechLog "No D: drive found on this machine (checked via Get-Volume) - nothing to reclaim around. Aborting." -Level Error
     exit 1
 }
-$diskNumber = $dPartition.DiskNumber
+Write-DomechLog "D: found: $([math]::Round($dVolume.Size/1GB,1)) GB total, $([math]::Round($dVolume.SizeRemaining/1GB,1)) GB free." -Level Info
 
-Write-DomechLog "D: found on Disk $diskNumber. Partitions on that disk:" -Level Info
-$allPartitions = Get-Partition -DiskNumber $diskNumber | Sort-Object PartitionNumber
-$allPartitions | Format-Table PartitionNumber, DriveLetter, Type, @{N='SizeGB';E={[math]::Round($_.Size/1GB,1)}} | Out-String | Write-DomechLog -Level Info
-
-$toDelete = $allPartitions | Where-Object { $_.PartitionNumber -ne $dPartition.PartitionNumber }
-if (-not $toDelete) {
-    Write-DomechLog "D: is already the only partition on Disk $diskNumber - nothing to delete. Skipping to extend/shadow-copy steps." -Level Warning
+# Get-Partition-based cleanup only works if the disk hasn't already collapsed
+# to a single Dynamic volume - try it, but treat "can't enumerate" as "already
+# done" rather than a fatal error, since that's what it means on this disk type.
+$dPartition = Get-Partition -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -eq 'D' }
+if (-not $dPartition) {
+    Write-DomechLog "Get-Partition can't enumerate this disk (expected for a Dynamic Disk already collapsed to one volume) - nothing left to delete, and it's already at full size per Get-Volume above. Skipping straight to shadow copies." -Level Warning
 } else {
-    Write-DomechLog "About to PERMANENTLY DELETE $($toDelete.Count) partition(s) on Disk $diskNumber (everything except D:)." -Level Warning
-    $answer = Read-Host "Type CONFIRM to proceed, anything else to abort"
-    if ($answer -ne "CONFIRM") {
-        Write-DomechLog "Aborted by operator - typed '$answer', not CONFIRM." -Level Error
-        exit 1
-    }
-    foreach ($p in $toDelete) {
-        Write-DomechLog "Deleting partition $($p.PartitionNumber) ($([math]::Round($p.Size/1GB,1)) GB)..." -Level Warning
-        Remove-Partition -DiskNumber $diskNumber -PartitionNumber $p.PartitionNumber -Confirm:$false
-    }
-    Write-DomechLog "Old partitions removed." -Level Success
-}
+    $diskNumber = $dPartition.DiskNumber
+    Write-DomechLog "D: found on Disk $diskNumber via Get-Partition. Partitions on that disk:" -Level Info
+    $allPartitions = Get-Partition -DiskNumber $diskNumber | Sort-Object PartitionNumber
+    $allPartitions | Format-Table PartitionNumber, DriveLetter, Type, @{N='SizeGB';E={[math]::Round($_.Size/1GB,1)}} | Out-String | Write-DomechLog -Level Info
 
-# ---- Extend D: to use the freed space ----
-Write-DomechLog "Extending D: to fill Disk $diskNumber..." -Level Info
-$maxSize = (Get-PartitionSupportedSize -DiskNumber $diskNumber -PartitionNumber $dPartition.PartitionNumber).SizeMax
-Resize-Partition -DiskNumber $diskNumber -PartitionNumber $dPartition.PartitionNumber -Size $maxSize
-$newSize = (Get-Partition -DiskNumber $diskNumber -PartitionNumber $dPartition.PartitionNumber).Size
-Write-DomechLog "D: is now $([math]::Round($newSize/1GB,1)) GB." -Level Success
+    $toDelete = $allPartitions | Where-Object { $_.PartitionNumber -ne $dPartition.PartitionNumber }
+    if (-not $toDelete) {
+        Write-DomechLog "D: is already the only partition on Disk $diskNumber - nothing to delete." -Level Warning
+    } else {
+        Write-DomechLog "About to PERMANENTLY DELETE $($toDelete.Count) partition(s) on Disk $diskNumber (everything except D:)." -Level Warning
+        $answer = Read-Host "Type CONFIRM to proceed, anything else to abort"
+        if ($answer -ne "CONFIRM") {
+            Write-DomechLog "Aborted by operator - typed '$answer', not CONFIRM." -Level Error
+            exit 1
+        }
+        foreach ($p in $toDelete) {
+            Write-DomechLog "Deleting partition $($p.PartitionNumber) ($([math]::Round($p.Size/1GB,1)) GB)..." -Level Warning
+            Remove-Partition -DiskNumber $diskNumber -PartitionNumber $p.PartitionNumber -Confirm:$false
+        }
+        Write-DomechLog "Old partitions removed." -Level Success
+    }
+
+    Write-DomechLog "Extending D: to fill Disk $diskNumber..." -Level Info
+    $maxSize = (Get-PartitionSupportedSize -DiskNumber $diskNumber -PartitionNumber $dPartition.PartitionNumber).SizeMax
+    Resize-Partition -DiskNumber $diskNumber -PartitionNumber $dPartition.PartitionNumber -Size $maxSize
+    $newSize = (Get-Volume -DriveLetter D).Size
+    Write-DomechLog "D: is now $([math]::Round($newSize/1GB,1)) GB." -Level Success
+}
 
 # ---- Enable Shadow Copies on D: ----
 # vssadmin's output/exit code is checked explicitly here - a prior version
