@@ -22,17 +22,35 @@ echo.
 echo   1. Old system  (DF.com - discovery / pre-format backup)
 echo   2. New system  (DF.local - build and manage)
 echo.
-echo   3. Update scripts from GitHub
-echo   4. Open Logs folder
+echo   3. Diagnostics
+echo.
+echo   4. Update scripts from GitHub
+echo   5. Open Logs folder
 echo   0. Exit
 echo.
 set /p c="Choose an option: "
 if "%c%"=="1" goto oldmenu
 if "%c%"=="2" goto newmenu
-if "%c%"=="3" call :run "Update-Scripts.ps1"
-if "%c%"=="4" start "" "%~dp0Logs"
+if "%c%"=="3" goto diagnostics
+if "%c%"=="4" call :run "Update-Scripts.ps1"
+if "%c%"=="5" start "" "%~dp0Logs"
 if "%c%"=="0" exit /b
 goto main
+
+:diagnostics
+cls
+echo ==============================
+echo   DIAGNOSTICS
+echo ==============================
+echo   1. Diagnose drive mapping (run ON the affected user's PC, logged in as them)
+echo   2. Test workstation connectivity (WinRM check, run from server)
+echo   0. Back
+echo.
+set /p c="Choose an option: "
+if "%c%"=="1" call :run "New\Workstation\Diagnose-DriveMapping.ps1"
+if "%c%"=="2" call :run "New\Workstation\Test-WorkstationConnectivity.ps1"
+if "%c%"=="0" goto main
+goto diagnostics
 
 :oldmenu
 cls
