@@ -109,23 +109,74 @@ if ($jobs) {
     Write-DomechLog "4. Nothing to clear." -Level Success
 }
 
-# ---- 5. the network printer ----
+# ---- 5. where are the printer ports actually pointing ----
+# The usual cause of "the printer will not connect" after network changes: the
+# printer was installed against the address it had at the time, the device has
+# since moved, and every PC is still trying to reach the old one. Printing and
+# scanning both break, because the scanning software targets the same address.
 Write-DomechLog "" -Level Info
-Write-DomechLog "5. Network printer" -Level Info
+Write-DomechLog "5. Printer ports - where each printer is being contacted" -Level Info
 $netPrinter = $Config.Printers | Where-Object { $_.IPAddress } | Select-Object -First 1
-if (-not $netPrinter) {
-    Write-DomechLog "   None configured." -Level Info
+$goodIp = if ($netPrinter) { $netPrinter.IPAddress } else { $null }
+
+$tcpPorts = Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.PrinterHostAddress }
+if (-not $tcpPorts) {
+    Write-DomechLog "   No network printer ports on this PC - any printer here is USB or a shared one." -Level Info
 } else {
-    if (Test-Connection -ComputerName $netPrinter.IPAddress -Count 2 -Quiet -ErrorAction SilentlyContinue) {
-        Write-DomechLog "   $($netPrinter.Name) answers at $($netPrinter.IPAddress)." -Level Success
-        $installed = $printers | Where-Object { $_.PortName -like "*$($netPrinter.IPAddress)*" -or $_.Name -like "*$($netPrinter.Name)*" }
-        if (-not $installed) {
-            Write-DomechLog "   It is reachable but NOT installed on this PC - that is why it cannot be printed to." -Level Warning
-            Write-DomechLog "   Deploy it from the server: install its driver there, then options 14 and 15." -Level Warning
+    foreach ($port in $tcpPorts) {
+        $addr  = $port.PrinterHostAddress
+        $alive = Test-Connection -ComputerName $addr -Count 2 -Quiet -ErrorAction SilentlyContinue
+        $users = ($printers | Where-Object { $_.PortName -eq $port.Name }).Name -join ', '
+        if ($alive) {
+            Write-DomechLog "   $($port.Name) -> $addr : answers  [used by: $(if ($users) { $users } else { 'nothing' })]" -Level Success
+        } else {
+            Write-DomechLog "   $($port.Name) -> $addr : DEAD, nothing answers  [used by: $(if ($users) { $users } else { 'nothing' })]" -Level Error
+            if ($goodIp -and $addr -ne $goodIp) {
+                Write-DomechLog "      The printer is at $goodIp now. This port still points at the old address." -Level Warning
+            }
         }
+    }
+}
+
+if ($goodIp) {
+    Write-DomechLog "" -Level Info
+    if (-not (Test-Connection -ComputerName $goodIp -Count 2 -Quiet -ErrorAction SilentlyContinue)) {
+        Write-DomechLog "   $($netPrinter.Name) does NOT answer at $goodIp from this PC - fix the network first." -Level Error
     } else {
-        Write-DomechLog "   $($netPrinter.Name) does NOT answer at $($netPrinter.IPAddress) from this PC." -Level Error
-        Write-DomechLog "   Check this PC's network first with 'Check this PC's network'." -Level Warning
+        Write-DomechLog "   $($netPrinter.Name) answers at $goodIp." -Level Success
+
+        # Repoint anything aimed at a dead address. Keeps the existing printer,
+        # its driver and its settings - only the address it dials changes.
+        $broken = @($printers | Where-Object {
+            $p = $_
+            $pt = $tcpPorts | Where-Object { $_.Name -eq $p.PortName }
+            $pt -and $pt.PrinterHostAddress -ne $goodIp -and
+            -not (Test-Connection -ComputerName $pt.PrinterHostAddress -Count 1 -Quiet -ErrorAction SilentlyContinue)
+        })
+
+        if ($broken) {
+            $newPort = "IP_$goodIp"
+            if (-not (Get-PrinterPort -Name $newPort -ErrorAction SilentlyContinue)) {
+                Add-PrinterPort -Name $newPort -PrinterHostAddress $goodIp -ErrorAction SilentlyContinue
+                Write-DomechLog "   Created port $newPort." -Level Success
+            }
+            foreach ($p in $broken) {
+                try {
+                    Set-Printer -Name $p.Name -PortName $newPort -ErrorAction Stop
+                    Write-DomechLog "   Repointed '$($p.Name)' to $goodIp - it was aimed at an address that no longer answers." -Level Success
+                } catch {
+                    Write-DomechLog "   Could not repoint '$($p.Name)': $($_.Exception.Message)" -Level Error
+                }
+            }
+            Write-DomechLog "   SCANNING is separate: Brother's scan software keeps its own copy of the" -Level Warning
+            Write-DomechLog "   address. Open iPrint&Scan or ControlCenter and point it at $goodIp too." -Level Warning
+        } else {
+            $installed = $printers | Where-Object { $_.PortName -like "*$goodIp*" -or $_.Name -like "*$($netPrinter.Name)*" }
+            if (-not $installed) {
+                Write-DomechLog "   It is reachable but NOT installed on this PC - that is why nothing prints to it." -Level Warning
+                Write-DomechLog "   Deploy it from the server: install its driver there, then options 14 and 15." -Level Warning
+            }
+        }
     }
 }
 
