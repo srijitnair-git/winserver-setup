@@ -12,18 +12,23 @@ they pick it up at their next restart.
 Edit config.json's WingetApps list and rerun this to change what is deployed.
 #>
 
-Import-Module GroupPolicy
-Import-Module ActiveDirectory
-
 $ScriptsRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $RepoRoot    = Split-Path $ScriptsRoot -Parent
 . "$ScriptsRoot\DomechCommon.ps1"
 $Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
+Assert-DomechAD
+Import-Module GroupPolicy -ErrorAction Stop
+
 $GpoName  = $Config.GPO.AppInstallGpoName
 if (-not $GpoName) { $GpoName = "Domech - App Deployment" }
 $domain   = (Get-ADDomain).DNSRoot
 $domainDN = (Get-ADDomain).DistinguishedName
+
+if (-not $domain -or -not $domainDN) {
+    Write-DomechLog "Could not read the domain name from Active Directory - stopping before anything is written. Run this on the domain controller." -Level Error
+    exit 1
+}
 
 $apps = $Config.WingetApps
 if (-not $apps) {
@@ -49,15 +54,27 @@ Write-DomechLog "Linked at the domain root so it reaches every workstation whate
 Block-DomainAdminsFromGPO -GpoName $GpoName -DomainDN $domainDN -GroupName "Domain Controllers"
 
 # Report where the workstations actually live, since an account sitting in the
-# default container is a good sign the domain join skipped the intended OU.
-$expectedOU = $Config.Paths.ComputersOU
-foreach ($pc in $Config.Workstations) {
-    $comp = Get-ADComputer -Filter "Name -eq '$pc'" -ErrorAction SilentlyContinue
-    if (-not $comp) {
-        Write-DomechLog "  $pc : no computer account in AD - not domain joined under that name." -Level Warning
-    } elseif ($expectedOU -and $comp.DistinguishedName -notlike "*$expectedOU") {
-        Write-DomechLog "  $pc : sits in $($comp.DistinguishedName -replace '^CN=[^,]+,','') rather than the Domech Computers OU. Harmless now that the policy is linked domain-wide." -Level Info
+# default container hints at a domain join that skipped the intended OU. Purely
+# informational - it must never be able to derail the deployment, so the whole
+# block is best-effort and stays quiet when it cannot answer.
+try {
+    $expectedOU = $Config.Paths.ComputersOU
+    $notJoined = @()
+    $elsewhere = @()
+    foreach ($pc in $Config.Workstations) {
+        $comp = Get-ADComputer -Filter "Name -eq '$pc'" -ErrorAction SilentlyContinue
+        if (-not $comp) { $notJoined += $pc }
+        elseif ($expectedOU -and $comp.DistinguishedName -notlike "*$expectedOU") { $elsewhere += $pc }
     }
+    if ($notJoined) {
+        Write-DomechLog "No computer account in AD for: $($notJoined -join ', ')" -Level Warning
+        Write-DomechLog "  Those PCs are not domain joined under that name, so no policy reaches them at all." -Level Warning
+    }
+    if ($elsewhere) {
+        Write-DomechLog "Outside the Domech Computers OU: $($elsewhere -join ', ') - harmless now the policy is linked domain-wide." -Level Info
+    }
+} catch {
+    Write-DomechLog "Could not check where the workstation accounts live (skipping - this does not affect the deployment)." -Level Info
 }
 
 # Build the deployable copy with the app list baked in. Rebuilt from source

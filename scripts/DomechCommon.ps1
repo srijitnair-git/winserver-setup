@@ -105,6 +105,34 @@ function Test-NtfsAceExists {
     return $false
 }
 
+function Assert-DomechAD {
+    <#
+    Stop with one clear message if the ActiveDirectory module will not load.
+
+    Import-Module without -ErrorAction Stop fails quietly, and the script then
+    carries on with no AD cmdlets: every call reports "is not recognized", the
+    domain name comes back empty, and paths built from it turn into "\\\NETLOGON".
+    The screen fills with follow-on errors and the one line that actually
+    mattered has long scrolled away. Fail here instead, before anything is
+    changed.
+    #>
+    try {
+        Import-Module ActiveDirectory -ErrorAction Stop
+    } catch {
+        Write-DomechLog "The ActiveDirectory PowerShell module could not be loaded. Nothing has been changed." -Level Error
+        Write-DomechLog "  Reason: $($_.Exception.Message)" -Level Error
+        Write-DomechLog "  PowerShell $($PSVersionTable.PSVersion), 64-bit process: $([Environment]::Is64BitProcess)" -Level Info
+        Write-DomechLog "  On the domain controller, install it once with:" -Level Warning
+        Write-DomechLog "      Install-WindowsFeature RSAT-AD-PowerShell" -Level Warning
+        Write-DomechLog "  then run this again." -Level Warning
+        exit 1
+    }
+    if (-not (Get-Command Get-ADDomain -ErrorAction SilentlyContinue)) {
+        Write-DomechLog "The ActiveDirectory module loaded but its commands are missing. This normally means a 32-bit PowerShell - use the ordinary 64-bit Windows PowerShell." -Level Error
+        exit 1
+    }
+}
+
 function Block-DomainAdminsFromGPO {
     <#
     Denies "Apply Group Policy" to Domain Admins on the given GPO, so IT/admin
