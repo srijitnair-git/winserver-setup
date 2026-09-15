@@ -258,6 +258,7 @@ while ($true) {
     Write-Host "  25. What can I actually open? - run as the affected user, reports only"
     Write-Host "  23. Set this PC's static IP from config.json"
     Write-Host "  26. Nothing prints on this PC - check and fix printing"
+    Write-Host "  27. Stop this PC signing in to the server as somebody else"
     Write-Host ""
     Write-Host "  PRINTERS ON A WORKSTATION (run from the server)" -ForegroundColor Cyan
     Write-Host "  19. List / share a USB printer on someone's PC"
@@ -291,6 +292,7 @@ while ($true) {
         '24' { Invoke-Toolkit 'scripts\New\Server\Test-PlannedAddresses.ps1'      -NeedsElevation }
         '25' { Invoke-Toolkit 'scripts\New\Workstation\Test-MyAccess.ps1' }
         '26' { Invoke-Toolkit 'scripts\New\Workstation\Repair-Printing.ps1'       -NeedsElevation }
+        '27' { Invoke-Toolkit 'scripts\New\Workstation\Clear-SavedServerLogins.ps1' }
         '18' {
             # Runs the copy in this folder with the app list read from the local
             # config.json, so it works whether or not the server deployment has
