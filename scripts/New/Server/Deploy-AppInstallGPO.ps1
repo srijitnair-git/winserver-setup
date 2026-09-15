@@ -35,18 +35,30 @@ Write-DomechLog "Deploying $($apps.Count) app(s): $($apps -join ', ')" -Level In
 $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
 if (-not $gpo) { $gpo = New-GPO -Name $GpoName }
 
-# Link to the workstations OU, NOT the domain root. A domain-root link would
-# include the Domain Controllers OU and install Chrome, VLC and the rest onto
-# the server itself - which is exactly what Deploy-StandardBaseline.ps1 warns
-# against. Fall back to the domain root only if that OU is missing, and say so.
-$linkTarget = $Config.Paths.ComputersOU
-if (-not $linkTarget -or -not (Get-ADOrganizationalUnit -Identity $linkTarget -ErrorAction SilentlyContinue)) {
-    Write-DomechLog "Workstations OU '$linkTarget' not found - linking at the domain root instead. Check that the server does not pick up these apps." -Level Warning
-    $linkTarget = $domainDN
-} else {
-    Write-DomechLog "Linking to $linkTarget (workstations only - the domain controller is deliberately excluded)." -Level Info
+# Link at the domain root, then deny it to Domain Controllers.
+#
+# Linking to the workstations OU instead looks tidier but silently misses any
+# machine that was joined without being placed in that OU - they land in the
+# default "Computers" container, which cannot have a GPO linked to it at all,
+# so those PCs receive nothing and gpresult simply does not list the policy.
+# A domain-root link reaches every machine regardless of where its account
+# sits; denying Domain Controllers keeps Chrome, VLC and the rest off the
+# server, which is the thing the OU link was protecting against.
+New-GPLink -Name $GpoName -Target $domainDN -ErrorAction SilentlyContinue | Out-Null
+Write-DomechLog "Linked at the domain root so it reaches every workstation whatever OU it is in." -Level Info
+Block-DomainAdminsFromGPO -GpoName $GpoName -DomainDN $domainDN -GroupName "Domain Controllers"
+
+# Report where the workstations actually live, since an account sitting in the
+# default container is a good sign the domain join skipped the intended OU.
+$expectedOU = $Config.Paths.ComputersOU
+foreach ($pc in $Config.Workstations) {
+    $comp = Get-ADComputer -Filter "Name -eq '$pc'" -ErrorAction SilentlyContinue
+    if (-not $comp) {
+        Write-DomechLog "  $pc : no computer account in AD - not domain joined under that name." -Level Warning
+    } elseif ($expectedOU -and $comp.DistinguishedName -notlike "*$expectedOU") {
+        Write-DomechLog "  $pc : sits in $($comp.DistinguishedName -replace '^CN=[^,]+,','') rather than the Domech Computers OU. Harmless now that the policy is linked domain-wide." -Level Info
+    }
 }
-New-GPLink -Name $GpoName -Target $linkTarget -ErrorAction SilentlyContinue | Out-Null
 
 # Build the deployable copy with the app list baked in. Rebuilt from source
 # every run rather than appended to, so rerunning after a config.json edit

@@ -32,6 +32,21 @@ function Write-Log($msg) {
     "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg" | Out-File $logPath -Append -Encoding UTF8
 }
 
+# ---- must be able to install machine-wide ----
+# Run by the startup script or the logon task this is SYSTEM and fine. Run by
+# hand in an ordinary PowerShell window it is the logged-in user, who cannot
+# install machine-wide software - every install then fails while still looking
+# like it tried. Stop up front and say so, rather than filling the log with
+# failures that read like winget problems.
+$isElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+              ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isElevated) {
+    Write-Log "NOT RUNNING AS ADMINISTRATOR (running as $env:USERNAME). Machine-wide installs cannot work from a standard user account, so nothing was attempted."
+    Write-Log "This is only a problem when run by hand - the startup script and logon task both run as SYSTEM. To run it manually, open PowerShell as Administrator first."
+    Write-Host "Not elevated - nothing attempted. Open PowerShell as Administrator and run this again." -ForegroundColor Red
+    return
+}
+
 # ---- once a day is enough ----
 if (Test-Path $stampPath) {
     $last = (Get-Item $stampPath).LastWriteTime
@@ -101,6 +116,8 @@ function Test-OfficeInstalled {
 # ---- install anything missing, update anything outdated ----
 $common = @("--silent", "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
 
+$failures = 0
+
 foreach ($id in $AppIds) {
     if ([string]::IsNullOrWhiteSpace($id)) { continue }
 
@@ -119,11 +136,21 @@ foreach ($id in $AppIds) {
         }
         # winget returns non-zero for "no applicable upgrade", which is not a failure
         $tail = ($out -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
+        if (-not $tail) { $tail = "(no output - the command produced nothing, treating as a failure)"; $failures++ }
         Write-Log "$id : $tail"
     } catch {
         Write-Log "$id : FAILED - $($_.Exception.Message)"
+        $failures++
     }
 }
 
-Set-Content -Path $stampPath -Value (Get-Date).ToString("o")
-Write-Log "--- App install/update finished ---"
+# Only mark the day done if it actually worked. Stamping after a failed run
+# blocked every retry for the next 20 hours, which is exactly what happened
+# when a non-elevated run failed every install and then silently locked itself
+# out - the next legitimate startup run just reported "skipping".
+if ($failures -eq 0) {
+    Set-Content -Path $stampPath -Value (Get-Date).ToString("o")
+    Write-Log "--- App install/update finished cleanly ---"
+} else {
+    Write-Log "--- App install/update finished with $failures failure(s) - NOT marking today as done, so the next startup or logon retries ---"
+}
