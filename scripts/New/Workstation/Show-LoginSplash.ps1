@@ -58,6 +58,39 @@ $font = New-Object System.Drawing.Font($fontFamily, 12, [System.Drawing.FontStyl
 $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 41, 84, 163))   # #2954a3, matches the design
 
 $g.DrawString("$displayName,", $font, $brush, [float]$nameX, [float]$nameY)
+
+# ---- Quote of the day ----
+# The artwork has one quote painted into it, so without this every person sees
+# the same line forever. The quote list is injected from config.json's
+# Splash.Quotes by Setup-DFLocal-Full.ps1 at deploy time - edit config.json,
+# not this placeholder.
+#
+# Measured against the artwork: the "Quote of the Day" heading sits at y700-717,
+# its underline at y720-721, and the baked-in quote at y729-735, x616-775. Only
+# the quote itself is painted over, leaving the heading and rule untouched.
+$Quotes = @(
+    "__QUOTES_PLACEHOLDER__"
+)
+$Quotes = $Quotes | Where-Object { $_ -and $_ -ne "__QUOTES_PLACEHOLDER__" }
+
+if ($Quotes.Count -gt 0) {
+    # Same quote for everyone on a given day, a different one tomorrow.
+    $quote = $Quotes[ ([int](Get-Date).DayOfYear) % $Quotes.Count ]
+
+    $g.FillRectangle([System.Drawing.Brushes]::White, 610, 723, 200, 18)
+
+    $quoteBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 60, 60, 60))
+    $quoteSize  = 9
+    $quoteFont  = New-Object System.Drawing.Font("Segoe UI", $quoteSize, [System.Drawing.FontStyle]::Italic, [System.Drawing.GraphicsUnit]::Pixel)
+    # Shrink rather than run off the edge of the card if someone adds a long one.
+    while ($g.MeasureString($quote, $quoteFont).Width -gt 420 -and $quoteSize -gt 6) {
+        $quoteFont.Dispose()
+        $quoteSize--
+        $quoteFont = New-Object System.Drawing.Font("Segoe UI", $quoteSize, [System.Drawing.FontStyle]::Italic, [System.Drawing.GraphicsUnit]::Pixel)
+    }
+    $g.DrawString($quote, $quoteFont, $quoteBrush, 615, 725)
+}
+
 $g.Dispose()
 
 # Fit the splash to this screen. The artwork is 1920x1080; on a smaller

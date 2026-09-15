@@ -82,6 +82,16 @@
   "Printers": [],
   "_comment_printers": "Empty until the real printers are known - run the 'Find printers on the network' option to discover them, then add entries here and deploy. Each entry: { \"Name\": \"Office Ricoh\", \"Path\": \"\\\\\\\\DOMECH\\\\RicohMP2014\", \"Groups\": [\"Common\"], \"Default\": true }. Path is a shared printer on the server (share it from the server first). Groups lists which security groups get it; an empty Groups list means everyone. Default:true makes it that user's default printer.",
   "Branding": {
+    "Quotes": [
+      "When there is a will; there is a way",
+      "Quality is not an act, it is a habit",
+      "Measure twice, cut once",
+      "A smooth sea never made a skilled sailor",
+      "Do the hard jobs first. The easy jobs will take care of themselves",
+      "Precision is the difference between a job and a craft",
+      "Small daily improvements lead to stunning results"
+    ],
+    "_comment_quotes": "Shown under 'Quote of the Day' on the login splash. One is picked per day, the same one for everyone that day, cycling through the list. Keep them short - long lines are shrunk to fit, but under about 55 characters looks best. Rerun the branding option after editing.",
     "SplashPng": "C:\\01_matrix\\Assets\\LoginSplash.png",
     "SplashFontTtf": "C:\\01_matrix\\Assets\\Fonts\\Geist-Bold.ttf",
     "WallpaperPng": "C:\\01_matrix\\Assets\\Wallpaper.png",

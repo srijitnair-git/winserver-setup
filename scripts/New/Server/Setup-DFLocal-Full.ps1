@@ -551,7 +551,21 @@ Write-Host "Setting up post-login splash..." -ForegroundColor Cyan
 if (Test-Path $SplashPng) {
     $netlogonPath = "\\$domain\NETLOGON"
     Copy-Item $SplashPng "$netlogonPath\LoginSplash.png" -Force
-    Copy-Item "$PSScriptRoot\..\Workstation\Show-LoginSplash.ps1" "$netlogonPath\Show-LoginSplash.ps1" -Force
+
+    # Bake the quote list in, the same way the service list is injected into
+    # Ensure-RequiredServices - the splash runs from NETLOGON as an ordinary
+    # user and cannot read config.json off the server.
+    $splashScript = Get-Content "$PSScriptRoot\..\Workstation\Show-LoginSplash.ps1" -Raw
+    $quotes = $Config.Branding.Quotes
+    if ($quotes) {
+        # Escape embedded double quotes so one bad character can't break the script.
+        $quoteLiteral = ($quotes | ForEach-Object { '    "' + ($_ -replace '"', '`"') + '"' }) -join "`n"
+        $splashScript = $splashScript -replace '"__QUOTES_PLACEHOLDER__"', $quoteLiteral.TrimStart()
+        Write-Host "  $($quotes.Count) quote(s) loaded - one shown per day." -ForegroundColor Green
+    } else {
+        Write-Host "  No Branding.Quotes in config.json - the splash keeps the quote painted into the artwork." -ForegroundColor Yellow
+    }
+    $splashScript | Out-File "$netlogonPath\Show-LoginSplash.ps1" -Encoding UTF8 -Force
     if ($SplashFontTtf -and (Test-Path $SplashFontTtf)) {
         New-Item -ItemType Directory -Path "$netlogonPath\Fonts" -Force | Out-Null
         Copy-Item $SplashFontTtf "$netlogonPath\Fonts\Geist-Bold.ttf" -Force
