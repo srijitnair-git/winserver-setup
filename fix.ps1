@@ -17,6 +17,7 @@ $ErrorActionPreference = 'Stop'
 
 $InstallRoot = 'C:\01_matrix'
 $ZipUrl      = 'https://github.com/srijitnair-git/winserver-setup/archive/refs/heads/main.zip'
+$RawUrl      = 'https://raw.githubusercontent.com/srijitnair-git/winserver-setup/main/fix.ps1'
 
 $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
             ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -49,6 +50,15 @@ try {
         $configBackup = Join-Path $tmp 'config.local.json'
         Copy-Item $liveConfig $configBackup -Force
     }
+
+    # If this script is itself about to be replaced, the menu further down is
+    # the OLD one - PowerShell parsed this file before the download happened,
+    # so new options would be missing until the next run. Notice that and say
+    # so, rather than showing a stale menu that silently lacks them.
+    $selfPath = $PSCommandPath     # empty when run straight from the URL, which is never stale
+    $selfHashBefore = if ($selfPath -and (Test-Path $selfPath)) {
+        (Get-FileHash $selfPath -Algorithm SHA256).Hash
+    } else { $null }
 
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     Copy-Item "$($inner.FullName)\*" $InstallRoot -Recurse -Force
@@ -110,6 +120,22 @@ try {
 
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Toolkit updated at $InstallRoot" -ForegroundColor Green
+
+    if ($selfHashBefore) {
+        $selfHashAfter = (Get-FileHash $selfPath -Algorithm SHA256).Hash
+        if ($selfHashAfter -ne $selfHashBefore) {
+            Write-Host ""
+            Write-Host "  =====================================================" -ForegroundColor Yellow
+            Write-Host "   This launcher just updated itself." -ForegroundColor Yellow
+            Write-Host "   The menu loaded in memory is the previous version," -ForegroundColor Yellow
+            Write-Host "   so it may be missing newly added options." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "   Type  domech  again to get the current menu." -ForegroundColor Yellow
+            Write-Host "  =====================================================" -ForegroundColor Yellow
+            Write-Host ""
+            return
+        }
+    }
 }
 catch {
     Write-Host "Could not download an update: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -126,9 +152,13 @@ catch {
 # any PowerShell or Command Prompt on this machine from now on.
 if ($elevated) {
     try {
+        # Fetch fresh from the URL rather than running the local copy. Running
+        # the local file meant the menu came from the version already on disk,
+        # which is by definition the previous one - new options only appeared
+        # on the run after. Falls back to the local copy when offline.
         @"
 @echo off
-powershell -NoProfile -ExecutionPolicy Bypass -File "$InstallRoot\fix.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; try { irm '$RawUrl' | iex } catch { Write-Host 'Offline - using the copy on this machine.' -ForegroundColor Yellow; & '$InstallRoot\fix.ps1' }"
 "@ | Out-File "$env:WINDIR\domech.cmd" -Encoding ASCII -Force
         Write-Host "Shortcut installed - next time just type: domech" -ForegroundColor Green
     } catch {
