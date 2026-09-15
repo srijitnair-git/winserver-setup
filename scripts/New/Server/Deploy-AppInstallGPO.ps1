@@ -55,9 +55,30 @@ $appLiteral = ($apps | ForEach-Object { "    `"$_`"" }) -join "`n"
 $script = Get-Content "$PSScriptRoot\..\Workstation\Install-StandardApps.ps1" -Raw
 $script = $script -replace '"__WINGET_APPS_PLACEHOLDER__"', $appLiteral.TrimStart()
 
+# Also fire at logon, not only at boot.
+#
+# Installing software needs admin rights, and staff are standard users, so a
+# plain logon script cannot do it - it would fail every time. A scheduled task
+# triggered BY logon but running AS SYSTEM gets both: it reacts to someone
+# signing in, with the rights to actually install. Same approach as the
+# required-services deployment.
+#
+# The once-a-day guard inside the script means this costs nothing at a normal
+# logon - it checks the timestamp and exits immediately. It matters for
+# machines left on for days that rarely reboot.
+$taskRegistration = @"
+
+# Self-register the logon-triggered run on first execution on each machine.
+`$action    = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File \\$domain\NETLOGON\Install-StandardApps.ps1"
+`$trigger   = New-ScheduledTaskTrigger -AtLogOn
+`$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask -TaskName "Domech-InstallApps-Logon" -Action `$action -Trigger `$trigger -Principal `$principal -Force -ErrorAction SilentlyContinue
+"@
+
 $netlogonPath = "\\$domain\NETLOGON"
-$script | Out-File "$netlogonPath\Install-StandardApps.ps1" -Encoding UTF8 -Force
+($script + $taskRegistration) | Out-File "$netlogonPath\Install-StandardApps.ps1" -Encoding UTF8 -Force
 Write-DomechLog "Published to $netlogonPath\Install-StandardApps.ps1" -Level Success
+Write-DomechLog "Runs at startup, and also at logon via a scheduled task running as SYSTEM - at most once a day either way." -Level Info
 
 $scriptsPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\Machine\Scripts"
 New-Item -ItemType Directory -Path "$scriptsPath\Startup" -Force | Out-Null
