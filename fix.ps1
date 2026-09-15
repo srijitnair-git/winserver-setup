@@ -181,6 +181,7 @@ while ($true) {
     Write-Host "   8. Repair my Windows profile (Explorer, Settings, Control Panel)"
     Write-Host "   9. Fix this workstation (profile + refresh policy + check drives)"
     Write-Host "  10. Diagnose drive mapping - writes a log, changes nothing"
+    Write-Host "  16. Why haven't the apps installed on this PC? - reports only"
     Write-Host ""
     Write-Host "   0. Exit"
     Write-Host ""
@@ -202,6 +203,7 @@ while ($true) {
         '13' { Invoke-Toolkit 'scripts\New\Server\Find-NetworkPrinters.ps1'         -NeedsElevation }
         '14' { Invoke-Toolkit 'scripts\New\Server\Add-NetworkPrinter.ps1'           -NeedsElevation }
         '15' { Invoke-Toolkit 'scripts\New\Server\Deploy-PrintersGPO.ps1'           -NeedsElevation }
+        '16' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-AppInstall.ps1' }
         '0'  { return }
         default { Write-Host "  Pick a number from the list." -ForegroundColor Yellow }
     }
