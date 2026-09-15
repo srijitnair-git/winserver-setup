@@ -209,11 +209,40 @@ foreach ($d in $Departments) {
         $subPath = Join-Path $path $sub.FolderName
         $subAcl = Get-Acl $subPath
         $subWant = [System.Security.AccessControl.FileSystemRights]::Modify
+        $subNeedsWrite = $false
+
+        # Strip explicit permissions that do not belong on this subfolder.
+        # Only its own sub-group belongs here explicitly - the parent group
+        # reaches it by inheritance, which is intended. Anything else is
+        # usually left over from the data migration, and it is what lets
+        # somebody from the OTHER sub-group see this folder even though their
+        # group membership is correct. Checking the sub-group ACE alone missed
+        # this entirely: the folder looked "already correct" while carrying an
+        # extra grant nobody asked for.
+        $allowedHere = @(
+            "DF\$($sub.GroupName)",
+            "DF\Domain Admins",
+            "NT AUTHORITY\SYSTEM",
+            "BUILTIN\Administrators",
+            "CREATOR OWNER"
+        )
+        foreach ($ace in @($subAcl.Access | Where-Object { -not $_.IsInherited })) {
+            if ($allowedHere -notcontains $ace.IdentityReference.Value) {
+                Write-Host "    removing unwanted permission on $($sub.FolderName): $($ace.IdentityReference.Value)" -ForegroundColor Yellow
+                [void]$subAcl.RemoveAccessRule($ace)
+                $subNeedsWrite = $true
+            }
+        }
+
         if (-not (Test-NtfsAceExists -Acl $subAcl -Identity "DF\$($sub.GroupName)" -Rights $subWant) -or $ForceAcl) {
-            Write-Host "    applying permissions to $($sub.FolderName) - may take a while..." -ForegroundColor Yellow
             $subRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
                 "DF\$($sub.GroupName)", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
             $subAcl.AddAccessRule($subRule)
+            $subNeedsWrite = $true
+        }
+
+        if ($subNeedsWrite) {
+            Write-Host "    applying permissions to $($sub.FolderName) - may take a while..." -ForegroundColor Yellow
             Set-Acl -Path $subPath -AclObject $subAcl
             Write-Host "    $($sub.FolderName) done." -ForegroundColor Green
         } else {

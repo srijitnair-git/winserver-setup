@@ -114,6 +114,57 @@ foreach ($d in $Config.Departments) {
     }
 }
 
+# ---- who the FOLDERS actually let in ----
+# Group membership being right does not mean access is right. A folder can
+# carry an explicit permission of its own - typically left behind by a data
+# migration - that grants people the group model never intended. That is
+# invisible from the group side and is exactly the case where one person sees
+# a subfolder another cannot.
+Write-DomechLog "" -Level Info
+Write-DomechLog "===== Permissions ON THE FOLDERS =====" -Level Info
+Write-DomechLog "(Explicit entries only. Inherited ones come from the parent and are expected.)" -Level Info
+
+$expectedEverywhere = @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators", "CREATOR OWNER", "$($Config.Domain.NetbiosName)\Domain Admins")
+
+function Show-FolderAcl {
+    param([string]$Path, [string[]]$Allowed, [string]$Label)
+    if (-not (Test-Path $Path)) {
+        Write-DomechLog "  $Label : folder missing - $Path" -Level Warning
+        return 0
+    }
+    $acl = Get-Acl $Path
+    $explicit = $acl.Access | Where-Object { -not $_.IsInherited }
+    Write-DomechLog "  $Label" -Level Info
+    Write-DomechLog "    inheritance blocked: $($acl.AreAccessRulesProtected)" -Level Info
+    $bad = 0
+    foreach ($ace in $explicit) {
+        $who = $ace.IdentityReference.Value
+        $ok = ($Allowed -contains $who) -or ($expectedEverywhere -contains $who)
+        if ($ok) {
+            Write-DomechLog "    ok        $who = $($ace.FileSystemRights)" -Level Success
+        } else {
+            Write-DomechLog "    UNWANTED  $who = $($ace.FileSystemRights)   <- grants access the groups never intended" -Level Error
+            $bad++
+        }
+    }
+    if (-not $explicit) { Write-DomechLog "    (no explicit entries - inherits everything)" -Level Info }
+    return $bad
+}
+
+$nb = $Config.Domain.NetbiosName
+foreach ($d in $Config.Departments) {
+    $path = Join-Path $Config.Paths.DataRoot $d.FolderName
+    $allowed = @("$nb\$($d.GroupName)") + ($d.SubDepartments | ForEach-Object { "$nb\$($_.GroupName)" })
+    $problems += Show-FolderAcl -Path $path -Allowed $allowed -Label "$($d.FolderName)  [$($d.ShareName)]"
+
+    foreach ($sub in $d.SubDepartments) {
+        $subPath = Join-Path $path $sub.FolderName
+        # Only its own sub-group belongs here explicitly. The parent group
+        # reaches it by inheritance, which is intended.
+        $problems += Show-FolderAcl -Path $subPath -Allowed @("$nb\$($sub.GroupName)") -Label "   \$($sub.FolderName)"
+    }
+}
+
 Write-DomechLog "" -Level Info
 if ($problems -eq 0) {
     Write-DomechLog "Everything matches config.json." -Level Success
