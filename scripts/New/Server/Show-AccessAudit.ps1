@@ -127,7 +127,7 @@ Write-DomechLog "(Explicit entries only. Inherited ones come from the parent and
 $expectedEverywhere = @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators", "CREATOR OWNER", "$($Config.Domain.NetbiosName)\Domain Admins")
 
 function Show-FolderAcl {
-    param([string]$Path, [string[]]$Allowed, [string]$Label)
+    param([string]$Path, [string[]]$Allowed, [string]$Label, [string[]]$SubGroupNames = @())
     if (-not (Test-Path $Path)) {
         Write-DomechLog "  $Label : folder missing - $Path" -Level Warning
         return 0
@@ -138,13 +138,25 @@ function Show-FolderAcl {
     Write-DomechLog "    inheritance blocked: $($acl.AreAccessRulesProtected)" -Level Info
     $bad = 0
     foreach ($ace in $explicit) {
-        $who = $ace.IdentityReference.Value
-        $ok = ($Allowed -contains $who) -or ($expectedEverywhere -contains $who)
-        if ($ok) {
-            Write-DomechLog "    ok        $who = $($ace.FileSystemRights)" -Level Success
-        } else {
-            Write-DomechLog "    UNWANTED  $who = $($ace.FileSystemRights)   <- grants access the groups never intended" -Level Error
+        $who   = $ace.IdentityReference.Value
+        $flags = $ace.InheritanceFlags.ToString()
+        $ok    = ($Allowed -contains $who) -or ($expectedEverywhere -contains $who)
+        $inheritsDown = $flags -ne 'None'
+
+        # A sub-group entry on the PARENT must be "this folder only". If it is
+        # inheritable it flows into every subfolder, handing that group access
+        # to the other sub-department's folder - which looks like nothing is
+        # wrong until you notice one person can open a folder another cannot.
+        $isSubGroupOnParent = $SubGroupNames -contains $who
+
+        if (-not $ok) {
+            Write-DomechLog "    UNWANTED  $who = $($ace.FileSystemRights)  [inherits: $flags]   <- grants access the groups never intended" -Level Error
             $bad++
+        } elseif ($isSubGroupOnParent -and $inheritsDown) {
+            Write-DomechLog "    WRONG     $who = $($ace.FileSystemRights)  [inherits: $flags]   <- should be 'None'. This passes down into BOTH subfolders." -Level Error
+            $bad++
+        } else {
+            Write-DomechLog "    ok        $who = $($ace.FileSystemRights)  [inherits: $flags]" -Level Success
         }
     }
     if (-not $explicit) { Write-DomechLog "    (no explicit entries - inherits everything)" -Level Info }
@@ -154,8 +166,9 @@ function Show-FolderAcl {
 $nb = $Config.Domain.NetbiosName
 foreach ($d in $Config.Departments) {
     $path = Join-Path $Config.Paths.DataRoot $d.FolderName
-    $allowed = @("$nb\$($d.GroupName)") + ($d.SubDepartments | ForEach-Object { "$nb\$($_.GroupName)" })
-    $problems += Show-FolderAcl -Path $path -Allowed $allowed -Label "$($d.FolderName)  [$($d.ShareName)]"
+    $subNames = @($d.SubDepartments | ForEach-Object { "$nb\$($_.GroupName)" })
+    $allowed = @("$nb\$($d.GroupName)") + $subNames
+    $problems += Show-FolderAcl -Path $path -Allowed $allowed -Label "$($d.FolderName)  [$($d.ShareName)]" -SubGroupNames $subNames
 
     foreach ($sub in $d.SubDepartments) {
         $subPath = Join-Path $path $sub.FolderName

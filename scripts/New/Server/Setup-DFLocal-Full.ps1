@@ -184,6 +184,24 @@ foreach ($d in $Departments) {
     # hides the subfolders they DON'T have rights to, rather than just denying
     # them on open - so Mansi never even sees "Salary Wages" listed, and vice versa.
     foreach ($sub in $d.SubDepartments) {
+        # A sub-group's entry on the PARENT must be "this folder only" so the
+        # group can reach its own subfolder without gaining rights to its
+        # sibling. An inheritable one passes straight down into BOTH
+        # subfolders, which silently hands each sub-department access to the
+        # other's data.
+        #
+        # Adding the correct entry is not enough on its own: AddAccessRule
+        # merges, so a wrongly-inheritable entry already present survives and
+        # keeps granting access. It has to be removed explicitly.
+        foreach ($ace in @($acl.Access | Where-Object { -not $_.IsInherited })) {
+            if ($ace.IdentityReference.Value -eq "DF\$($sub.GroupName)" -and
+                $ace.InheritanceFlags.ToString() -ne 'None') {
+                Write-Host "    removing inheritable '$($sub.GroupName)' entry on $($d.FolderName) - it was granting access to BOTH subfolders." -ForegroundColor Yellow
+                [void]$acl.RemoveAccessRule($ace)
+                $aclNeedsWrite = $true
+            }
+        }
+
         $hasTraverse = Test-NtfsAceExists -Acl $acl -Identity "DF\$($sub.GroupName)" `
             -Rights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) -InheritanceFlags "None"
         if (-not $hasTraverse -or $ForceAcl) {
