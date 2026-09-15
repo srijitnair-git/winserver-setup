@@ -39,15 +39,25 @@ if (-not $printers -or $printers.Count -eq 0) {
     exit 0
 }
 
-# Warn early rather than deploying a printer nobody can reach.
+# Warn early rather than deploying a printer nobody can reach. A path can point
+# at this server or at a workstation hosting a USB printer, so only check the
+# ones that claim to be here.
+$thisHost = $env:COMPUTERNAME
 foreach ($p in $printers) {
+    $pathHost  = ($p.Path -split '\\') | Where-Object { $_ } | Select-Object -First 1
     $shareName = ($p.Path -split '\\')[-1]
+
+    if ($pathHost -ne $thisHost) {
+        Write-DomechLog "'$($p.Name)' -> $($p.Path) : hosted on $pathHost, not this server. That PC must be switched on for anyone to print to it." -Level Warning
+        continue
+    }
+
     $local = Get-Printer -Name $shareName -ErrorAction SilentlyContinue
     if (-not $local) {
         $local = Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.ShareName -eq $shareName }
     }
     if (-not $local) {
-        Write-DomechLog "'$($p.Name)' -> $($p.Path) : no matching shared printer found on this server. Users will get an error until it is installed and shared here." -Level Warning
+        Write-DomechLog "'$($p.Name)' -> $($p.Path) : no matching shared printer found on this server. Users will get an error until it is installed and shared here - run 'Install and share the network printer' first." -Level Warning
     } elseif (-not $local.Shared) {
         Write-DomechLog "'$($p.Name)' is installed on this server but NOT shared - share it or users cannot connect." -Level Warning
     }

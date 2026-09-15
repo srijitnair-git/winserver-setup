@@ -95,7 +95,16 @@ foreach ($i in 1..254) {
             $async = $client.BeginConnect($ip, $port, $null, $null)
             if ($async.AsyncWaitHandle.WaitOne(400) -and $client.Connected) {
                 $name = try { [System.Net.Dns]::GetHostEntry($ip).HostName } catch { "(no DNS name)" }
-                Write-DomechLog "  $ip : port $port open - $name" -Level Success
+                # Report the MAC too. A printer that has moved to a different
+                # DHCP address is only identifiable by its MAC - the Brother's
+                # is B4-22-00-D6-A6-5B per the IP plan.
+                $mac = (Get-NetNeighbor -IPAddress $ip -ErrorAction SilentlyContinue |
+                        Select-Object -First 1 -ExpandProperty LinkLayerAddress)
+                if (-not $mac) { $mac = "(MAC unknown)" }
+                Write-DomechLog "  $ip : port $port open - $name - $mac" -Level Success
+                if ($mac -eq "B4-22-00-D6-A6-5B") {
+                    Write-DomechLog "    ^ this is the Brother DCP-B7535DW. config.json expects it at 192.168.0.50." -Level Warning
+                }
             }
         } catch {
         } finally {
