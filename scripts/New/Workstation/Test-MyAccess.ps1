@@ -31,10 +31,35 @@ $nb = $Config.Domain.NetbiosName
 
 Write-DomechLog "===== Access check for $env:USERDOMAIN\$env:USERNAME on $env:COMPUTERNAME =====" -Level Info
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-           ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if ($isAdmin) {
-    Write-DomechLog "WARNING: this session is elevated. Administrators can open everything, so these results do not reflect a normal user's access. Run it without elevation, signed in as the person concerned." -Level Warning
+# Refuse outright when run by an administrator, rather than warning and then
+# printing results anyway. Domain Admins has Full Control of every folder by
+# design, so an admin session opens both subfolders and the report fills with
+# alarming "NOT EXPECTED" lines that are simply describing correct behaviour.
+# A diagnostic that produces convincing wrong answers when pointed at the wrong
+# account is worse than no diagnostic.
+$groupSids = ([Security.Principal.WindowsIdentity]::GetCurrent()).Groups.Value
+$isDomainAdmin = @($groupSids | Where-Object { $_ -like 'S-1-5-21-*-512' }).Count -gt 0
+$isLocalAdmin  = $groupSids -contains 'S-1-5-32-544'
+
+if ($isDomainAdmin -or $isLocalAdmin) {
+    Write-DomechLog "" -Level Info
+    Write-DomechLog "This is running as $env:USERDOMAIN\$env:USERNAME, which is an administrator." -Level Error
+    Write-DomechLog "" -Level Info
+    Write-DomechLog "Administrators have full control of every folder, so this would report that" -Level Error
+    Write-DomechLog "everything opens - which is correct for an administrator and says nothing at" -Level Error
+    Write-DomechLog "all about the person you are checking. Stopping rather than giving you an" -Level Error
+    Write-DomechLog "answer that looks meaningful and is not." -Level Error
+    Write-DomechLog "" -Level Info
+    Write-DomechLog "To check somebody's real access:" -Level Warning
+    Write-DomechLog "  1. Sign out of this account completely" -Level Warning
+    Write-DomechLog "  2. Sign in as that person, with their own username and password" -Level Warning
+    Write-DomechLog "  3. Open PowerShell NORMALLY - not 'Run as administrator'" -Level Warning
+    Write-DomechLog "  4. Run the toolkit link and choose this option again" -Level Warning
+    Write-DomechLog "" -Level Info
+    Write-DomechLog "Checking from an admin session is also the usual reason somebody appears to" -Level Warning
+    Write-DomechLog "have access they should not - the folder opened for the administrator doing" -Level Warning
+    Write-DomechLog "the checking, not for them." -Level Warning
+    exit 1
 }
 
 # ---- 1. the groups in THIS session, which is what Windows actually uses ----
