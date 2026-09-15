@@ -121,6 +121,8 @@
     "FastStone.FastStoneImageViewer",
     "VideoLAN.VLC",
     "Google.Chrome",
-    "Microsoft.PowerShell"
-  ]
+    "Microsoft.PowerShell",
+    "Microsoft.Office"
+  ],
+  "_comment_wingetApps": "Microsoft.Office is Microsoft 365 Apps - roughly 4GB per machine, so restart workstations a few at a time rather than all at once. It is skipped automatically on any machine that already has Office, so an existing install is never overwritten. TallyPrime is deliberately absent: it has no winget package and is installed by hand."
 }

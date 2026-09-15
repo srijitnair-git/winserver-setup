@@ -79,11 +79,35 @@ if (-not $wingetExe) {
 }
 Write-Log "Using winget at $wingetExe"
 
+# Office is the one app here that must never be installed over an existing one.
+# A machine already carrying OEM or perpetual Office would end up with two
+# conflicting suites, or lose the one people actually use. winget's own check
+# only recognises Office installed through winget, so it is not enough on its
+# own. Install only where there is no Office at all, and say so when skipping
+# so it can be dealt with by hand.
+function Test-OfficeInstalled {
+    if (Test-Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration") { return $true }
+    foreach ($p in @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )) {
+        $hit = Get-ItemProperty $p -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -match 'Microsoft (Office|365)' }
+        if ($hit) { return $true }
+    }
+    return $false
+}
+
 # ---- install anything missing, update anything outdated ----
 $common = @("--silent", "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
 
 foreach ($id in $AppIds) {
     if ([string]::IsNullOrWhiteSpace($id)) { continue }
+
+    if ($id -eq "Microsoft.Office" -and (Test-OfficeInstalled)) {
+        Write-Log "$id : Office is already on this machine - skipping, so an existing install is never overwritten. Upgrade it by hand if that is wanted."
+        continue
+    }
     try {
         $listed = & $wingetExe list --id $id --exact --accept-source-agreements 2>&1 | Out-String
         if ($listed -match [regex]::Escape($id)) {
