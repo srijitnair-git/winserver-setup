@@ -192,6 +192,30 @@ foreach ($d in $Config.Departments) {
         $problems++
         continue
     }
+    # WHERE does the share actually point? Setup only creates a share when one
+    # does not already exist, so a share made earlier against a different folder
+    # is left exactly as it was. Every permission check in this audit looks at
+    # the folder config.json names - if the share points somewhere else, all of
+    # that has been describing a folder nobody actually reaches.
+    $expectedPath = Join-Path $Config.Paths.DataRoot $d.FolderName
+    if ($share.Path -ne $expectedPath) {
+        Write-DomechLog "  $($d.ShareName) : POINTS AT THE WRONG FOLDER" -Level Error
+        Write-DomechLog "      share serves : $($share.Path)" -Level Error
+        Write-DomechLog "      config expects: $expectedPath" -Level Error
+        Write-DomechLog "      Everything reached through this share uses the permissions on the folder it actually serves, not the one checked above." -Level Error
+        $problems++
+        # Show what is really being served, since that is what people can read.
+        if (Test-Path $share.Path) {
+            $realAcl = Get-Acl $share.Path
+            Write-DomechLog "      permissions on the folder it really serves:" -Level Error
+            foreach ($ace in $realAcl.Access) {
+                Write-DomechLog "        $($ace.IdentityReference.Value) = $($ace.FileSystemRights) (inherited: $($ace.IsInherited))" -Level Warning
+            }
+        }
+    } else {
+        Write-DomechLog "  $($d.ShareName) : serves $($share.Path) - correct" -Level Success
+    }
+
     # Share permissions are a separate gate from the folder permissions and
     # were never being checked. A share still granting Everyone lets people
     # reach it by typing \\server\share even when no drive is mapped for them
