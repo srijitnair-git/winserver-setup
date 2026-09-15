@@ -79,6 +79,10 @@
     "AppInstallGpoName": "Domech - App Deployment",
     "PrinterGpoName": "Domech - Printers"
   },
+  "PrinterGroups": {
+    "CanonUsers": ["supriya", "priyanka", "mansi", "sneha", "nisha"]
+  },
+  "_comment_printerGroups": "Security groups created and kept in sync by the printer deployment, used only to decide who gets which printer. Membership is managed here, on the server - that is what 'the server decides who gets which printer' means in practice.",
   "Printers": [
     {
       "Name": "Brother DCP-B7535DW",
@@ -87,6 +91,34 @@
       "IPAddress": "192.168.0.50",
       "Groups": [],
       "Default": true
+    },
+    {
+      "Name": "Canon LBP2900 (Supriya)",
+      "Path": "\\\\SUPRIYA-DF\\CanonSupriya",
+      "HostComputer": "SUPRIYA-DF",
+      "Groups": ["CanonUsers"],
+      "Default": false
+    },
+    {
+      "Name": "Canon LBP2900 (Priyanka)",
+      "Path": "\\\\PRIYANKA-DF\\CanonPriyanka",
+      "HostComputer": "PRIYANKA-DF",
+      "Groups": ["CanonUsers"],
+      "Default": false
+    },
+    {
+      "Name": "HP LaserJet Tank MFP 260x (Gokul)",
+      "Path": "\\\\GOKUL-DF\\HPTank",
+      "HostComputer": "GOKUL-DF",
+      "Users": ["gokul"],
+      "Default": false
+    },
+    {
+      "Name": "HP LaserJet Professional M1136 MFP (Rahul)",
+      "Path": "\\\\RAHUL-DF\\HPM1136",
+      "HostComputer": "RAHUL-DF",
+      "Users": ["rahul"],
+      "Default": false
     }
   ],
   "_comment_printers": "Only network printers belong here. The Brother is the one shared printer - everyone gets it (empty Groups = everyone) and it is their default. IPAddress is used by 'Install a network printer on the server'; Path is what workstations connect to once it is shared. The IP plan records .50 as the intended static address, but notes the printer may still be on DHCP at .191 - confirm before deploying. The USB printers (HP LaserJet Tank MFP 260x on Gokul, HP LaserJet Professional M1136 MFP on Rahul, Canon LBP2900 on Priyanka and on Supriya, HP LaserJet Pro P1100 Plus on Prakash) are deliberately NOT listed: they are USB-attached to one PC each, have no network address, and Windows installs them locally when plugged in. Nothing to deploy centrally.",

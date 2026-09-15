@@ -63,6 +63,39 @@ foreach ($p in $printers) {
     }
 }
 
+# ---- printer access groups ----
+# These exist only to decide who gets which printer, and are kept in sync with
+# config.json on every run - so access is managed here on the server rather
+# than by touching individual PCs.
+$groupsOU = "OU=Groups,OU=Domech,$domainDN"
+if ($Config.PrinterGroups) {
+    foreach ($groupName in $Config.PrinterGroups.PSObject.Properties.Name) {
+        $members = $Config.PrinterGroups.$groupName
+        if (-not (Get-ADGroup -Filter "Name -eq '$groupName'" -ErrorAction SilentlyContinue)) {
+            New-ADGroup -Name $groupName -GroupScope Global -GroupCategory Security -Path $groupsOU
+            Write-DomechLog "Created printer group '$groupName'." -Level Success
+        }
+        foreach ($sam in $members) {
+            if (-not (Get-ADUser -Filter "SamAccountName -eq '$sam'" -ErrorAction SilentlyContinue)) {
+                Write-DomechLog "  '$sam' does not exist - not added to $groupName." -Level Warning
+                continue
+            }
+            Add-ADGroupMember -Identity $groupName -Members $sam -ErrorAction SilentlyContinue
+        }
+        # Remove anyone no longer listed, so config.json is the single source of
+        # truth rather than only ever adding people.
+        $current = Get-ADGroupMember -Identity $groupName -ErrorAction SilentlyContinue |
+            Where-Object { $_.objectClass -eq 'user' }
+        foreach ($existing in $current) {
+            if ($members -notcontains $existing.SamAccountName) {
+                Remove-ADGroupMember -Identity $groupName -Members $existing.SamAccountName -Confirm:$false -ErrorAction SilentlyContinue
+                Write-DomechLog "  Removed '$($existing.SamAccountName)' from $groupName - no longer listed in config.json." -Level Warning
+            }
+        }
+        Write-DomechLog "Printer group '$groupName': $($members -join ', ')" -Level Success
+    }
+}
+
 $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
 if (-not $gpo) { $gpo = New-GPO -Name $GpoName }
 New-GPLink -Name $GpoName -Target $domainDN -ErrorAction SilentlyContinue | Out-Null
@@ -78,23 +111,39 @@ $entries = foreach ($p in $printers) {
     $pathXml = [System.Security.SecurityElement]::Escape($p.Path)
     $default = if ($p.Default) { "1" } else { "0" }
 
-    $filter = ""
-    if ($p.Groups -and $p.Groups.Count -gt 0) {
-        $filterLines = foreach ($g in $p.Groups) {
-            $adGroup = Get-ADGroup -Filter "Name -eq '$g'" -ErrorAction SilentlyContinue
-            if (-not $adGroup) {
-                Write-DomechLog "  Group '$g' does not exist - '$($p.Name)' will not be filtered to it." -Level Warning
-                continue
-            }
-            $gXml = [System.Security.SecurityElement]::Escape($g)
-            "      <FilterGroup bool=`"OR`" not=`"0`" name=`"$gXml`" sid=`"$($adGroup.SID.Value)`" userContext=`"1`" primaryGroup=`"0`" localGroup=`"0`"/>"
+    # Filter by group, by named user, or both. Named users suit a printer that
+    # belongs to one person; a group suits one shared between several.
+    $filterLines = @()
+
+    foreach ($g in ($p.Groups | Where-Object { $_ })) {
+        $adGroup = Get-ADGroup -Filter "Name -eq '$g'" -ErrorAction SilentlyContinue
+        if (-not $adGroup) {
+            Write-DomechLog "  Group '$g' does not exist - '$($p.Name)' will not be filtered to it." -Level Warning
+            continue
         }
-        if ($filterLines) {
-            $filter = "    <Filters>`n$($filterLines -join "`n")`n    </Filters>`n"
-        }
+        $gXml = [System.Security.SecurityElement]::Escape($g)
+        $filterLines += "      <FilterGroup bool=`"OR`" not=`"0`" name=`"$gXml`" sid=`"$($adGroup.SID.Value)`" userContext=`"1`" primaryGroup=`"0`" localGroup=`"0`"/>"
     }
 
-    Write-DomechLog "  $($p.Name) -> $($p.Path)$(if ($p.Default) { ' (default)' })$(if ($p.Groups) { " for: $($p.Groups -join ', ')" } else { ' for: everyone' })" -Level Info
+    foreach ($u in ($p.Users | Where-Object { $_ })) {
+        $adUser = Get-ADUser -Filter "SamAccountName -eq '$u'" -ErrorAction SilentlyContinue
+        if (-not $adUser) {
+            Write-DomechLog "  User '$u' does not exist - '$($p.Name)' will not be filtered to them." -Level Warning
+            continue
+        }
+        $uXml = [System.Security.SecurityElement]::Escape("$($Config.Domain.NetbiosName)\$u")
+        $filterLines += "      <FilterUser bool=`"OR`" not=`"0`" name=`"$uXml`" sid=`"$($adUser.SID.Value)`" userContext=`"1`"/>"
+    }
+
+    $filter = ""
+    if ($filterLines.Count -gt 0) {
+        $filter = "    <Filters>`n$($filterLines -join "`n")`n    </Filters>`n"
+    }
+
+    $who = if ($p.Groups -or $p.Users) {
+        (@($p.Groups) + @($p.Users) | Where-Object { $_ }) -join ', '
+    } else { 'everyone' }
+    Write-DomechLog "  $($p.Name) -> $($p.Path)$(if ($p.Default) { ' (default)' }) for: $who" -Level Info
 
     @"
   <SharedPrinter clsid="{9A5E9697-9095-436d-A0EE-4D128FDFBCE5}" name="$nameXml" status="$nameXml" image="0" changed="$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')" uid="{$([guid]::NewGuid())}">
