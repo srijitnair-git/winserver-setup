@@ -165,6 +165,65 @@ foreach ($d in $Config.Departments) {
     }
 }
 
+# ---- is access-based enumeration actually on ----
+# This is what hides a subfolder someone has no rights to. With it off they
+# still cannot open the folder, but they SEE it listed - which looks exactly
+# like a permissions failure and is the usual reason for "why can they see
+# that folder" when the permissions themselves are correct.
+Write-DomechLog "" -Level Info
+Write-DomechLog "===== Share settings =====" -Level Info
+foreach ($d in $Config.Departments) {
+    $share = Get-SmbShare -Name $d.ShareName -ErrorAction SilentlyContinue
+    if (-not $share) {
+        Write-DomechLog "  $($d.ShareName) : share does not exist" -Level Error
+        $problems++
+        continue
+    }
+    if ($d.SubDepartments) {
+        if ($share.FolderEnumerationMode -eq 'AccessBased') {
+            Write-DomechLog "  $($d.ShareName) : access-based enumeration ON - people only see subfolders they can open" -Level Success
+        } else {
+            Write-DomechLog "  $($d.ShareName) : access-based enumeration is $($share.FolderEnumerationMode) - EVERYONE SEES EVERY SUBFOLDER LISTED, even ones they cannot open. This alone explains the symptom." -Level Error
+            $problems++
+        }
+    } else {
+        Write-DomechLog "  $($d.ShareName) : $($share.FolderEnumerationMode) (no subfolders, so it does not matter)" -Level Info
+    }
+}
+
+# ---- who can actually open each subfolder ----
+# Computed from AD membership against the folder's real permissions, so it does
+# not depend on anybody being signed in to test it.
+Write-DomechLog "" -Level Info
+Write-DomechLog "===== Who can actually open each subfolder =====" -Level Info
+foreach ($d in $Config.Departments) {
+    if (-not $d.SubDepartments) { continue }
+    $path = Join-Path $Config.Paths.DataRoot $d.FolderName
+
+    foreach ($sub in $d.SubDepartments) {
+        $subPath = Join-Path $path $sub.FolderName
+        if (-not (Test-Path $subPath)) { continue }
+        $acl = Get-Acl $subPath
+        $granted = @()
+
+        foreach ($u in $Config.Users) {
+            $ids = @("$nb\$($u.Sam)")
+            try {
+                $ids += Get-ADPrincipalGroupMembership -Identity $u.Sam -ErrorAction Stop |
+                    ForEach-Object { "$nb\$($_.Name)" }
+            } catch { }
+
+            $canOpen = $acl.Access | Where-Object {
+                $_.AccessControlType -eq 'Allow' -and
+                ($ids -contains $_.IdentityReference.Value) -and
+                ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::ReadData)
+            }
+            if ($canOpen) { $granted += $u.Sam }
+        }
+        Write-DomechLog "  $($sub.FolderName) : $(if ($granted) { $granted -join ', ' } else { 'nobody' })" -Level Info
+    }
+}
+
 Write-DomechLog "" -Level Info
 if ($problems -eq 0) {
     Write-DomechLog "Everything matches config.json." -Level Success

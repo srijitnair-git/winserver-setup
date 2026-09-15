@@ -250,8 +250,19 @@ foreach ($d in $Departments) {
         }
     }
 
+    # Access-based enumeration is what hides a subfolder from someone who has
+    # no rights to it. Without it the permissions still hold - they cannot open
+    # it - but they SEE it listed, which is indistinguishable from broken
+    # permissions to the person looking at it. Set it, then read it back,
+    # because Set-SmbShare reports nothing on success.
     if ($d.SubDepartments) {
         Set-SmbShare -Name $d.ShareName -FolderEnumerationMode AccessBased -Force
+        $check = Get-SmbShare -Name $d.ShareName -ErrorAction SilentlyContinue
+        if ($check -and $check.FolderEnumerationMode -eq 'AccessBased') {
+            Write-Host "    access-based enumeration on - subfolders are hidden from people without rights." -ForegroundColor Green
+        } else {
+            Write-Host "    WARNING: access-based enumeration did NOT take on $($d.ShareName) (currently '$($check.FolderEnumerationMode)'). People will see subfolders they cannot open." -ForegroundColor Red
+        }
     }
 }
 
