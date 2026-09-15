@@ -1,0 +1,123 @@
+<#
+Domech Fabricators - who actually has access to what
+
+Run on the DC, elevated. Read-only: it reports, it changes nothing.
+
+Compares what config.json says against what Active Directory actually holds.
+They drift apart because the setup only ever ADDS people to groups - it has
+never removed anyone - so a membership granted at any point in the past stays
+forever, even after config.json stops listing it.
+
+That matters most for the shared department. Being in the parent
+SalaryWagesPurchase group grants both subfolders; being in Purchase or
+SalaryWages alone grants only that one. Someone left in the parent group sees
+everything, whatever config.json says.
+#>
+
+$ScriptsRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$RepoRoot    = Split-Path $ScriptsRoot -Parent
+. "$ScriptsRoot\DomechCommon.ps1"
+$Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
+Assert-DomechAD
+
+# Every group this toolkit manages, so unrelated AD groups are ignored.
+$managed = @()
+foreach ($d in $Config.Departments) {
+    $managed += $d.GroupName
+    foreach ($sub in $d.SubDepartments) { $managed += $sub.GroupName }
+}
+$managed += $Config.Workstation.GroupName
+if ($Config.PrinterGroups) { $managed += $Config.PrinterGroups.PSObject.Properties.Name }
+
+Write-DomechLog "Groups this toolkit manages: $($managed -join ', ')" -Level Info
+Write-DomechLog "" -Level Info
+
+$problems = 0
+
+foreach ($u in $Config.Users) {
+    $adUser = Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue
+    if (-not $adUser) {
+        Write-DomechLog "$($u.Sam) : no account in AD" -Level Warning
+        $problems++
+        continue
+    }
+
+    $actual = @()
+    try {
+        $actual = Get-ADPrincipalGroupMembership -Identity $adUser -ErrorAction Stop |
+            Select-Object -ExpandProperty Name | Where-Object { $managed -contains $_ }
+    } catch {
+        Write-DomechLog "$($u.Sam) : could not read group membership - $($_.Exception.Message)" -Level Warning
+        $problems++
+        continue
+    }
+
+    # Printer groups are listed separately in config, so count them as expected.
+    $expected = @($u.Groups)
+    if ($Config.PrinterGroups) {
+        foreach ($pg in $Config.PrinterGroups.PSObject.Properties.Name) {
+            if ($Config.PrinterGroups.$pg -contains $u.Sam) { $expected += $pg }
+        }
+    }
+
+    $extra   = $actual   | Where-Object { $expected -notcontains $_ }
+    $missing = $expected | Where-Object { $actual   -notcontains $_ }
+
+    if (-not $extra -and -not $missing) {
+        Write-DomechLog "$($u.Sam.PadRight(10)) OK   $($actual -join ', ')" -Level Success
+        continue
+    }
+
+    $problems++
+    Write-DomechLog "$($u.Sam.PadRight(10)) MISMATCH" -Level Warning
+    Write-DomechLog "    config says : $($expected -join ', ')" -Level Info
+    Write-DomechLog "    AD actually : $($actual -join ', ')" -Level Info
+    if ($extra) {
+        Write-DomechLog "    IN AD BUT NOT IN CONFIG: $($extra -join ', ')  <- extra access nobody asked for" -Level Error
+    }
+    if ($missing) {
+        Write-DomechLog "    IN CONFIG BUT NOT IN AD: $($missing -join ', ')  <- access they should have and do not" -Level Warning
+    }
+}
+
+# Call out the specific case that makes a shared folder leak.
+Write-DomechLog "" -Level Info
+Write-DomechLog "===== Parent-and-sub overlaps =====" -Level Info
+foreach ($d in $Config.Departments) {
+    if (-not $d.SubDepartments) { continue }
+    $parentMembers = @()
+    try {
+        $parentMembers = Get-ADGroupMember -Identity $d.GroupName -ErrorAction Stop |
+            Where-Object { $_.objectClass -eq 'user' } | Select-Object -ExpandProperty SamAccountName
+    } catch { continue }
+
+    foreach ($sub in $d.SubDepartments) {
+        $subMembers = @()
+        try {
+            $subMembers = Get-ADGroupMember -Identity $sub.GroupName -ErrorAction Stop |
+                Where-Object { $_.objectClass -eq 'user' } | Select-Object -ExpandProperty SamAccountName
+        } catch { continue }
+
+        $both = $subMembers | Where-Object { $parentMembers -contains $_ }
+        if ($both) {
+            $problems++
+            Write-DomechLog "$($both -join ', ') are in BOTH '$($d.GroupName)' and '$($sub.GroupName)'." -Level Error
+            Write-DomechLog "   The parent group grants the whole '$($d.FolderName)' folder, so they see every subfolder - the sub-group restriction has no effect for them." -Level Error
+        }
+    }
+    Write-DomechLog "'$($d.GroupName)' (whole folder): $(if ($parentMembers) { $parentMembers -join ', ' } else { 'nobody' })" -Level Info
+    foreach ($sub in $d.SubDepartments) {
+        $m = @()
+        try { $m = Get-ADGroupMember -Identity $sub.GroupName -ErrorAction SilentlyContinue |
+                Where-Object { $_.objectClass -eq 'user' } | Select-Object -ExpandProperty SamAccountName } catch {}
+        Write-DomechLog "'$($sub.GroupName)' ($($sub.FolderName) only): $(if ($m) { $m -join ', ' } else { 'nobody' })" -Level Info
+    }
+}
+
+Write-DomechLog "" -Level Info
+if ($problems -eq 0) {
+    Write-DomechLog "Everything matches config.json." -Level Success
+} else {
+    Write-DomechLog "$problems thing(s) to look at above." -Level Warning
+    Write-DomechLog "To make AD match config.json exactly, run 'Fix folder permissions and shares' - it now removes memberships config.json no longer lists, as well as adding missing ones." -Level Info
+}

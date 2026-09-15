@@ -215,6 +215,7 @@ while ($true) {
     Write-Host "  ROLLOUT (server)" -ForegroundColor Cyan
     Write-Host "  11. Wallpaper, lock screen and login splash"
     Write-Host "  12. Install/update apps on every workstation"
+    Write-Host "  20. Who has access to what - reports only, changes nothing"
     Write-Host "  13. Find printers on the network - reports only, changes nothing"
     Write-Host "  14. Install and share the network printer on this server"
     Write-Host "  15. Deploy printers to users (run 14 first)"
@@ -252,6 +253,7 @@ while ($true) {
         '15' { Invoke-Toolkit 'scripts\New\Server\Deploy-PrintersGPO.ps1'           -NeedsElevation }
         '16' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-AppInstall.ps1' }
         '17' { Invoke-Toolkit 'scripts\Repair-StartMenu.ps1' }
+        '20' { Invoke-Toolkit 'scripts\New\Server\Show-AccessAudit.ps1'            -NeedsElevation }
         '18' {
             # Runs the copy in this folder with the app list read from the local
             # config.json, so it works whether or not the server deployment has

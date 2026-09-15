@@ -257,6 +257,15 @@ if ($missingUsers) {
     Write-Host "  Creating $($missingUsers.Count) new account(s): $($missingUsers.Sam -join ', ')" -ForegroundColor Cyan
 }
 
+# Every group this toolkit manages. Membership outside this set is somebody
+# else's business and is never touched.
+$managedGroups = @()
+foreach ($d in $Departments) {
+    $managedGroups += $d.GroupName
+    foreach ($sub in $d.SubDepartments) { $managedGroups += $sub.GroupName }
+}
+$managedGroups += $WorkstationGroupName
+
 foreach ($u in $Users) {
     if (-not (Get-ADUser -Filter "SamAccountName -eq '$($u.Sam)'" -ErrorAction SilentlyContinue)) {
         New-ADUser -Name $u.Name -SamAccountName $u.Sam -UserPrincipalName "$($u.Sam)@DF.local" `
@@ -264,6 +273,29 @@ foreach ($u in $Users) {
     }
     foreach ($g in $u.Groups) {
         Add-ADGroupMember -Identity $g -Members $u.Sam -ErrorAction SilentlyContinue
+    }
+
+    # Remove memberships config.json no longer lists. Without this the setup
+    # only ever adds, so any group somebody was put in at any point - by an
+    # earlier config, the old server, or by hand - stays forever and quietly
+    # overrides what config.json says.
+    #
+    # It matters most where a parent and a sub-group overlap: being left in
+    # SalaryWagesPurchase grants the whole folder, so the Purchase/SalaryWages
+    # split stops restricting anything for that person while config.json still
+    # claims it does.
+    try {
+        $actualGroups = Get-ADPrincipalGroupMembership -Identity $u.Sam -ErrorAction Stop |
+            Select-Object -ExpandProperty Name |
+            Where-Object { $managedGroups -contains $_ }
+        foreach ($g in $actualGroups) {
+            if ($u.Groups -notcontains $g) {
+                Remove-ADGroupMember -Identity $g -Members $u.Sam -Confirm:$false -ErrorAction SilentlyContinue
+                Write-Host "  Removed $($u.Sam) from '$g' - config.json no longer lists it." -ForegroundColor Yellow
+            }
+        }
+    } catch {
+        Write-Host "  Could not check existing group membership for $($u.Sam): $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
 
