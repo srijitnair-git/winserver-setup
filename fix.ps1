@@ -52,10 +52,62 @@ try {
 
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     Copy-Item "$($inner.FullName)\*" $InstallRoot -Recurse -Force
+
     if ($configBackup) {
+        # Put this machine's own config back, then merge in anything new from
+        # the update. Without the merge, settings added upstream (new apps,
+        # printers, quotes) never arrive - the scripts update but the settings
+        # they read stay frozen at whatever this machine had on day one.
+        # Only ever adds: an existing value here always wins.
         Copy-Item $configBackup $liveConfig -Force
-        Write-Host "Kept the config.json already on this machine." -ForegroundColor Gray
+
+        function Merge-DomechConfig {
+            param($From, $Into, [string]$Path = "")
+            $added = @()
+            foreach ($prop in $From.PSObject.Properties) {
+                $name = $prop.Name
+                $full = if ($Path) { "$Path.$name" } else { $name }
+
+                if (-not $Into.PSObject.Properties[$name]) {
+                    $Into | Add-Member -NotePropertyName $name -NotePropertyValue $prop.Value
+                    $added += $full
+                }
+                elseif ($prop.Value -is [System.Management.Automation.PSCustomObject] -and
+                        $Into.$name -is [System.Management.Automation.PSCustomObject]) {
+                    $added += Merge-DomechConfig -From $prop.Value -Into $Into.$name -Path $full
+                }
+                elseif ($prop.Value -is [Array] -and $Into.$name -is [Array]) {
+                    foreach ($item in $prop.Value) {
+                        if ($item -is [string] -and $Into.$name -notcontains $item) {
+                            $Into.$name += $item
+                            $added += "$full -> $item"
+                        }
+                    }
+                }
+            }
+            return $added
+        }
+
+        try {
+            $repoCfg  = Get-Content "$($inner.FullName)\config.json" -Raw | ConvertFrom-Json
+            $localCfg = Get-Content $liveConfig -Raw | ConvertFrom-Json
+            $newBits  = Merge-DomechConfig -From $repoCfg -Into $localCfg
+
+            if ($newBits) {
+                Copy-Item $liveConfig "$liveConfig.backup" -Force
+                $localCfg | ConvertTo-Json -Depth 20 | Out-File $liveConfig -Encoding UTF8
+                Write-Host "Kept your config.json and added $($newBits.Count) new setting(s):" -ForegroundColor Green
+                $newBits | ForEach-Object { Write-Host "    + $_" -ForegroundColor Green }
+                Write-Host "  (previous version saved as config.json.backup)" -ForegroundColor Gray
+            } else {
+                Write-Host "Kept the config.json already on this machine - nothing new to add." -ForegroundColor Gray
+            }
+        } catch {
+            Write-Host "Could not merge new settings into config.json: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Your config.json is untouched." -ForegroundColor Yellow
+        }
     }
+
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Toolkit updated at $InstallRoot" -ForegroundColor Green
 }
