@@ -188,6 +188,59 @@ if ($sessions) {
     Write-DomechLog "   none" -Level Info
 }
 
+# ---- 5. WHO are those connections actually authenticated as ----
+# Windows allows one identity per server per session. If anybody ever connected
+# to the server from this PC as an administrator and the credentials were
+# saved, every later connection reuses them - including ones this person makes
+# themselves. They then read whatever that administrator can read, while their
+# own group membership and every permission on the server is entirely correct.
+# That is invisible from the server and looks exactly like broken permissions.
+Write-DomechLog "" -Level Info
+Write-DomechLog "5. WHO are those connections signed in as" -Level Info
+Write-DomechLog "   (Should be $env:USERDOMAIN\$env:USERNAME. Anything else and this person is" -Level Info
+Write-DomechLog "    reading the server as somebody else.)" -Level Info
+try {
+    $conns = Get-SmbConnection -ErrorAction Stop
+    if ($conns) {
+        $wrong = @()
+        foreach ($c in $conns) {
+            $asWho = $c.UserName
+            $mine  = $asWho -and ($asWho -replace '.*\\','') -eq $env:USERNAME
+            if ($mine) {
+                Write-DomechLog "   \\$($c.ServerName)\$($c.ShareName) as $asWho" -Level Success
+            } else {
+                Write-DomechLog "   \\$($c.ServerName)\$($c.ShareName) as $asWho   <- NOT THIS PERSON" -Level Error
+                $wrong += $asWho
+            }
+        }
+        if ($wrong) {
+            Write-DomechLog "" -Level Info
+            Write-DomechLog "   THIS IS THE FAULT. This PC is talking to the server as $(($wrong | Select-Object -Unique) -join ', ')," -Level Error
+            Write-DomechLog "   not as $env:USERNAME, so it reads everything that account can read." -Level Error
+            Write-DomechLog "   The server's permissions are fine - the connection is signed in as the wrong person." -Level Error
+        }
+    } else {
+        Write-DomechLog "   no active connections" -Level Info
+    }
+} catch {
+    Write-DomechLog "   Could not read connections: $($_.Exception.Message)" -Level Warning
+}
+
+# ---- 6. saved credentials, which are what cause that ----
+Write-DomechLog "" -Level Info
+Write-DomechLog "6. Saved credentials on this PC" -Level Info
+$cred = cmdkey /list 2>&1 | Out-String
+$serverEntries = ($cred -split "`r?`n") | Where-Object { $_ -match 'Target:.*(DOMECH|DF\.local)' }
+if ($serverEntries) {
+    $serverEntries | ForEach-Object { Write-DomechLog "   $($_.Trim())" -Level Error }
+    Write-DomechLog "   Saved credentials for the server are stored on this PC. If they belong to an" -Level Error
+    Write-DomechLog "   administrator, every connection from here uses them instead of this person's." -Level Error
+    Write-DomechLog "   Clear them with:   cmdkey /delete:DOMECH" -Level Warning
+    Write-DomechLog "   then sign out and back in." -Level Warning
+} else {
+    Write-DomechLog "   none saved for the server" -Level Success
+}
+
 Write-DomechLog "" -Level Info
 Write-DomechLog "===== Done =====" -Level Success
 Write-DomechLog "If anything above says NOT EXPECTED, sign out completely (not lock, not restart) and run this again. If it still says it after a clean sign-in, the server needs another look." -Level Warning
