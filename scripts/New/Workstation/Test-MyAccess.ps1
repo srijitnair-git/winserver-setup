@@ -95,38 +95,83 @@ if ($me) {
 # ---- 3. what can actually be opened ----
 Write-DomechLog "" -Level Info
 Write-DomechLog "3. What this session can actually open" -Level Info
+Write-DomechLog "   (Item counts matter: connecting to a share and seeing NOTHING is very" -Level Info
+Write-DomechLog "    different from actually reading it, and both look like success.)" -Level Info
+
+function Test-RealAccess {
+    <#
+    Distinguishes three outcomes that a simple success/fail check confuses:
+      denied      - cannot get in at all
+      no content  - got in but can read nothing, which is what correct
+                    permissions look like from the outside
+      real access - can list items AND open one to read
+    Reading a file is the only proof of genuine access. An empty listing is
+    ambiguous: it looks identical whether the folder is empty or everything in
+    it is hidden.
+    #>
+    param([string]$Path)
+    $r = [ordered]@{ Reachable = $false; Items = 0; CanReadFile = $false; Error = $null }
+    try {
+        $items = @(Get-ChildItem $Path -Force -ErrorAction Stop)
+        $r.Reachable = $true
+        $r.Items = $items.Count
+        $file = $items | Where-Object { -not $_.PSIsContainer } | Select-Object -First 1
+        if ($file) {
+            try {
+                $fs = [System.IO.File]::OpenRead($file.FullName)
+                $null = $fs.ReadByte()
+                $fs.Close()
+                $r.CanReadFile = $true
+            } catch { }
+        }
+    } catch {
+        $r.Error = $_.Exception.Message
+    }
+    return $r
+}
+
 foreach ($d in $Config.Departments) {
     $unc = "\\$server\$($d.ShareName)"
-    $canSee = $false
-    try { $null = Get-ChildItem $unc -ErrorAction Stop; $canSee = $true } catch { }
+    $shouldHaveShare = $me -and (
+        $me.Groups -contains $d.GroupName -or
+        @($d.SubDepartments | Where-Object { $me.Groups -contains $_.GroupName }).Count -gt 0
+    )
 
-    if (-not $canSee) {
-        Write-DomechLog "   $($d.FolderName.PadRight(26)) no access to the share itself" -Level Info
-        continue
+    $res = Test-RealAccess -Path $unc
+    if (-not $res.Reachable) {
+        Write-DomechLog "   $($d.FolderName.PadRight(26)) no access to the share - correct" -Level Success
+    } else {
+        $detail = "$($res.Items) item(s)$(if ($res.CanReadFile) { ', and can read a file' })"
+        if ($shouldHaveShare) {
+            Write-DomechLog "   $($d.FolderName.PadRight(26)) opens - $detail (expected)" -Level Success
+        } elseif ($res.Items -eq 0) {
+            Write-DomechLog "   $($d.FolderName.PadRight(26)) connects but sees nothing - $detail. Not real access." -Level Info
+        } else {
+            Write-DomechLog "   $($d.FolderName.PadRight(26)) OPENS AND SEES CONTENT - $detail  <- NOT EXPECTED" -Level Error
+        }
     }
-    Write-DomechLog "   $($d.FolderName.PadRight(26)) share opens" -Level Success
 
     foreach ($sub in $d.SubDepartments) {
         $subUnc = Join-Path $unc $sub.FolderName
-        $listed = $false
-        $opened = $false
-        try { $listed = (Get-ChildItem $unc -Directory -ErrorAction SilentlyContinue |
-                         Where-Object { $_.Name -eq $sub.FolderName }).Count -gt 0 } catch { }
-        try { $null = Get-ChildItem $subUnc -ErrorAction Stop; $opened = $true } catch { }
+        $listedInParent = $false
+        try {
+            $listedInParent = @(Get-ChildItem $unc -Directory -ErrorAction SilentlyContinue |
+                                Where-Object { $_.Name -eq $sub.FolderName }).Count -gt 0
+        } catch { }
 
-        $verdict = if ($opened)      { "CAN OPEN" }
-                   elseif ($listed)  { "visible but cannot open" }
-                   else              { "hidden - no access" }
-        $level   = if ($opened) { "Error" } else { "Success" }
-
-        # Only the person's own sub-department should be openable, so flag the
-        # other one being reachable rather than quietly listing it.
+        $sr = Test-RealAccess -Path $subUnc
         $shouldHave = $me -and ($me.Groups -contains $sub.GroupName -or $me.Groups -contains $d.GroupName)
-        if ($opened -and $shouldHave) { $level = "Success"; $verdict = "CAN OPEN (expected)" }
-        elseif ($opened)              { $level = "Error";   $verdict = "CAN OPEN - NOT EXPECTED" }
-        else                          { $level = "Success" }
 
-        Write-DomechLog "      \$($sub.FolderName.PadRight(20)) $verdict" -Level $level
+        if (-not $sr.Reachable) {
+            $state = if ($listedInParent) { "listed but cannot open - correct" } else { "hidden - correct" }
+            Write-DomechLog "      \$($sub.FolderName.PadRight(20)) $state" -Level Success
+        } elseif ($shouldHave) {
+            Write-DomechLog "      \$($sub.FolderName.PadRight(20)) opens - $($sr.Items) item(s)$(if ($sr.CanReadFile) { ', can read a file' }) (expected)" -Level Success
+        } elseif ($sr.Items -eq 0) {
+            Write-DomechLog "      \$($sub.FolderName.PadRight(20)) connects but sees nothing (0 items). Not real access - permissions are holding." -Level Info
+        } else {
+            Write-DomechLog "      \$($sub.FolderName.PadRight(20)) OPENS AND SEES $($sr.Items) ITEM(S)$(if ($sr.CanReadFile) { ', CAN READ A FILE' })  <- NOT EXPECTED" -Level Error
+        }
     }
 }
 

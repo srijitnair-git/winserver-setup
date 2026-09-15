@@ -192,6 +192,22 @@ foreach ($d in $Config.Departments) {
         $problems++
         continue
     }
+    # Share permissions are a separate gate from the folder permissions and
+    # were never being checked. A share still granting Everyone lets people
+    # reach it by typing \\server\share even when no drive is mapped for them
+    # and the folder permissions look correct.
+    $shareAcl = Get-SmbShareAccess -Name $d.ShareName -ErrorAction SilentlyContinue
+    foreach ($ace in $shareAcl) {
+        $who = $ace.AccountName
+        $loose = $who -match 'Everyone|Authenticated Users|BUILTIN\\Users|Domain Users'
+        if ($loose) {
+            Write-DomechLog "  $($d.ShareName) : SHARE grants '$who' $($ace.AccessRight) - anyone can reach this by typing \\$env:COMPUTERNAME\$($d.ShareName)" -Level Error
+            $problems++
+        } else {
+            Write-DomechLog "  $($d.ShareName) : share grants '$who' $($ace.AccessRight)" -Level Success
+        }
+    }
+
     if ($d.SubDepartments) {
         if ($share.FolderEnumerationMode -eq 'AccessBased') {
             Write-DomechLog "  $($d.ShareName) : access-based enumeration ON - people only see subfolders they can open" -Level Success
