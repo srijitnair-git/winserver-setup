@@ -89,6 +89,7 @@
       "ShareName": "Brother",
       "Path": "\\\\DOMECH\\Brother",
       "IPAddress": "192.168.0.50",
+      "MacAddress": "B4-22-00-D6-A6-5B",
       "Groups": [],
       "Default": true
     },

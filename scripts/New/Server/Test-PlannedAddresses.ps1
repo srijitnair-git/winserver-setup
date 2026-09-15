@@ -18,8 +18,12 @@ $RepoRoot    = Split-Path $ScriptsRoot -Parent
 $Config = Initialize-DomechContext -ScriptName $MyInvocation.MyCommand.Name -RepoRoot $RepoRoot
 
 $planned = [ordered]@{}
+$expectedMac = @{}    # name -> MAC, where config knows it
 $planned["SERVER (this machine)"] = $Config.Network.DnsServer
-foreach ($p in $Config.Printers | Where-Object { $_.IPAddress }) { $planned[$p.Name] = $p.IPAddress }
+foreach ($p in $Config.Printers | Where-Object { $_.IPAddress }) {
+    $planned[$p.Name] = $p.IPAddress
+    if ($p.MacAddress) { $expectedMac[$p.Name] = $p.MacAddress }
+}
 foreach ($name in $Config.Network.WorkstationIPs.PSObject.Properties.Name) {
     $planned[$name] = $Config.Network.WorkstationIPs.$name
 }
@@ -44,10 +48,19 @@ foreach ($name in $planned.Keys) {
             Select-Object -First 1 -ExpandProperty LinkLayerAddress)
     $dns = try { [System.Net.Dns]::GetHostEntry($ip).HostName } catch { $null }
 
+    # A MAC match is proof it is the intended device, whatever it calls itself.
+    # Network printers in particular answer to a name derived from their MAC
+    # rather than their model, so matching on name alone reports the right
+    # device sitting on its own address as a conflict.
+    $macMatches = $expectedMac.ContainsKey($name) -and $mac -and
+                  ($mac -replace '[:-]','') -eq ($expectedMac[$name] -replace '[:-]','')
+
     if ($isMine) {
         Write-DomechLog "  $($name.PadRight(24)) $ip  - this server, correct" -Level Success
     } elseif (-not $answers) {
         Write-DomechLog "  $($name.PadRight(24)) $ip  - free" -Level Success
+    } elseif ($macMatches) {
+        Write-DomechLog "  $($name.PadRight(24)) $ip  - already set correctly (MAC matches$(if ($dns) { ", $dns" }))" -Level Success
     } elseif ($dns -and $dns -like "$name*") {
         Write-DomechLog "  $($name.PadRight(24)) $ip  - already set correctly ($dns)" -Level Success
     } else {
