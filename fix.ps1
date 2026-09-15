@@ -180,8 +180,13 @@ while ($true) {
     Write-Host "  ON THIS PC (server or workstation)" -ForegroundColor Cyan
     Write-Host "   8. Repair my Windows profile (Explorer, Settings, Control Panel)"
     Write-Host "   9. Fix this workstation (profile + refresh policy + check drives)"
+    Write-Host "  17. Repair the Start Menu on this PC"
+    Write-Host "  18. Install/update the apps on THIS PC right now"
     Write-Host "  10. Diagnose drive mapping - writes a log, changes nothing"
     Write-Host "  16. Why haven't the apps installed on this PC? - reports only"
+    Write-Host ""
+    Write-Host "  PRINTERS ON A WORKSTATION (run from the server)" -ForegroundColor Cyan
+    Write-Host "  19. List / share a USB printer on someone's PC"
     Write-Host ""
     Write-Host "   0. Exit"
     Write-Host ""
@@ -204,6 +209,49 @@ while ($true) {
         '14' { Invoke-Toolkit 'scripts\New\Server\Add-NetworkPrinter.ps1'           -NeedsElevation }
         '15' { Invoke-Toolkit 'scripts\New\Server\Deploy-PrintersGPO.ps1'           -NeedsElevation }
         '16' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-AppInstall.ps1' }
+        '17' { Invoke-Toolkit 'scripts\Repair-StartMenu.ps1' }
+        '18' {
+            if (-not $elevated) {
+                Write-Host "  Needs an elevated window - installing software requires it. Close this, open PowerShell as Administrator, and type: domech" -ForegroundColor Red
+            } else {
+                # Clear the once-a-day marker first: a run that failed for any
+                # reason leaves it set, and the script would then just report
+                # "skipping" - not what anyone choosing this expects.
+                Remove-Item "C:\ProgramData\Domech\AppInstall.lastrun" -ErrorAction SilentlyContinue
+
+                # Must be the NETLOGON copy: the one in this folder still has the
+                # placeholder, the app list is only baked in at deploy time.
+                $dom = $env:USERDNSDOMAIN
+                if (-not $dom) {
+                    try { $dom = (Get-Content (Join-Path $InstallRoot 'config.json') -Raw | ConvertFrom-Json).Domain.Name } catch { }
+                }
+                $deployed = "\\$dom\NETLOGON\Install-StandardApps.ps1"
+                if ($dom -and (Test-Path $deployed)) {
+                    Write-Host "  Running $deployed ..." -ForegroundColor Cyan
+                    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $deployed
+                    Write-Host "  Done. Details in C:\ProgramData\Domech\AppInstall.log" -ForegroundColor Gray
+                } else {
+                    Write-Host "  Not published yet at $deployed - run option 12 on the server first." -ForegroundColor Red
+                }
+            }
+        }
+        '19' {
+            if (-not $elevated) {
+                Write-Host "  Needs an elevated window. Close this, open PowerShell as Administrator, and type: domech" -ForegroundColor Red
+            } else {
+                $pc = Read-Host "  Which PC? (e.g. SUPRIYA-DF)"
+                if ($pc) {
+                    $prn = Read-Host "  Printer name to share (press Enter to just list what is on that PC)"
+                    $shareArgs = @('-ComputerName', $pc)
+                    if ($prn) {
+                        $shr = Read-Host "  Share name (e.g. CanonSupriya - must match config.json)"
+                        $shareArgs += @('-PrinterName', $prn)
+                        if ($shr) { $shareArgs += @('-ShareName', $shr) }
+                    }
+                    Invoke-Toolkit 'scripts\New\Server\Share-WorkstationPrinter.ps1' -Arguments $shareArgs
+                }
+            }
+        }
         '0'  { return }
         default { Write-Host "  Pick a number from the list." -ForegroundColor Yellow }
     }
