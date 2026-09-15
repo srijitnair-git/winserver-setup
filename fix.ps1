@@ -230,6 +230,7 @@ while ($true) {
     Write-Host "  10. Diagnose drive mapping - writes a log, changes nothing"
     Write-Host "  16. Why haven't the apps installed on this PC? - reports only"
     Write-Host "  22. Check this PC's network - reports only, changes nothing"
+    Write-Host "  25. What can I actually open? - run as the affected user, reports only"
     Write-Host "  23. Set this PC's static IP from config.json"
     Write-Host ""
     Write-Host "  PRINTERS ON A WORKSTATION (run from the server)" -ForegroundColor Cyan
@@ -262,6 +263,7 @@ while ($true) {
         '22' { Invoke-Toolkit 'scripts\New\Workstation\Test-NetworkHealth.ps1' }
         '23' { Invoke-Toolkit 'scripts\New\Workstation\Set-StaticIP.ps1'           -NeedsElevation }
         '24' { Invoke-Toolkit 'scripts\New\Server\Test-PlannedAddresses.ps1'      -NeedsElevation }
+        '25' { Invoke-Toolkit 'scripts\New\Workstation\Test-MyAccess.ps1' }
         '18' {
             # Runs the copy in this folder with the app list read from the local
             # config.json, so it works whether or not the server deployment has
