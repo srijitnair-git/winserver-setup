@@ -122,7 +122,8 @@ while ($true) {
     Write-Host "  11. Wallpaper, lock screen and login splash"
     Write-Host "  12. Install/update apps on every workstation"
     Write-Host "  13. Find printers on the network - reports only, changes nothing"
-    Write-Host "  14. Deploy printers to users (fill in config.json Printers first)"
+    Write-Host "  14. Install and share the network printer on this server"
+    Write-Host "  15. Deploy printers to users (run 14 first)"
     Write-Host ""
     Write-Host "  ON THIS PC (server or workstation)" -ForegroundColor Cyan
     Write-Host "   8. Repair my Windows profile (Explorer, Settings, Control Panel)"
@@ -147,7 +148,8 @@ while ($true) {
         '11' { Invoke-Toolkit $setup -Arguments @('-Only','Branding')               -NeedsElevation }
         '12' { Invoke-Toolkit 'scripts\New\Server\Deploy-AppInstallGPO.ps1'         -NeedsElevation }
         '13' { Invoke-Toolkit 'scripts\New\Server\Find-NetworkPrinters.ps1'         -NeedsElevation }
-        '14' { Invoke-Toolkit 'scripts\New\Server\Deploy-PrintersGPO.ps1'           -NeedsElevation }
+        '14' { Invoke-Toolkit 'scripts\New\Server\Add-NetworkPrinter.ps1'           -NeedsElevation }
+        '15' { Invoke-Toolkit 'scripts\New\Server\Deploy-PrintersGPO.ps1'           -NeedsElevation }
         '0'  { return }
         default { Write-Host "  Pick a number from the list." -ForegroundColor Yellow }
     }
