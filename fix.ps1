@@ -170,19 +170,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager
 function Invoke-Toolkit {
     param([string]$RelativePath, [string[]]$Arguments = @(), [switch]$NeedsElevation)
 
-    if ($NeedsElevation -and -not $elevated) {
-        Write-Host ""
-        Write-Host "  That one needs an elevated window. Close this, open PowerShell as" -ForegroundColor Red
-        Write-Host "  Administrator, and type: domech" -ForegroundColor Red
-        return
-    }
     $full = Join-Path $InstallRoot $RelativePath
     if (-not (Test-Path $full)) {
         Write-Host "  Missing file: $full" -ForegroundColor Red
         return
     }
+
     Write-Host ""
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $full @Arguments
+    if ($NeedsElevation -and -not $elevated) {
+        # Ask for elevation rather than sending the user away to reopen a
+        # window. Only used for the options that genuinely need admin rights -
+        # the per-user repairs deliberately stay in the current account, since
+        # elevating as somebody else would fix the wrong profile.
+        Write-Host "  This needs administrator rights - approve the prompt." -ForegroundColor Yellow
+        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$full`"") + $Arguments
+        try {
+            Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
+            Write-Host "  (ran in an elevated window)" -ForegroundColor Gray
+        } catch {
+            Write-Host "  Elevation was refused or failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "  If this PC is not yours to administer, an admin needs to run it." -ForegroundColor Red
+        }
+    } else {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $full @Arguments
+    }
+
     Write-Host ""
     Write-Host "  --- finished - back at the menu ---" -ForegroundColor Gray
 }
@@ -211,7 +223,7 @@ while ($true) {
     Write-Host "   8. Repair my Windows profile (Explorer, Settings, Control Panel)"
     Write-Host "   9. Fix this workstation (profile + refresh policy + check drives)"
     Write-Host "  17. Repair the Start Menu on this PC"
-    Write-Host "  18. Install/update the apps on THIS PC right now"
+    Write-Host "  18. Install/update the apps on THIS PC right now (no server setup needed)"
     Write-Host "  10. Diagnose drive mapping - writes a log, changes nothing"
     Write-Host "  16. Why haven't the apps installed on this PC? - reports only"
     Write-Host ""
@@ -241,45 +253,25 @@ while ($true) {
         '16' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-AppInstall.ps1' }
         '17' { Invoke-Toolkit 'scripts\Repair-StartMenu.ps1' }
         '18' {
-            if (-not $elevated) {
-                Write-Host "  Needs an elevated window - installing software requires it. Close this, open PowerShell as Administrator, and type: domech" -ForegroundColor Red
-            } else {
-                # Clear the once-a-day marker first: a run that failed for any
-                # reason leaves it set, and the script would then just report
-                # "skipping" - not what anyone choosing this expects.
-                Remove-Item "C:\ProgramData\Domech\AppInstall.lastrun" -ErrorAction SilentlyContinue
-
-                # Must be the NETLOGON copy: the one in this folder still has the
-                # placeholder, the app list is only baked in at deploy time.
-                $dom = $env:USERDNSDOMAIN
-                if (-not $dom) {
-                    try { $dom = (Get-Content (Join-Path $InstallRoot 'config.json') -Raw | ConvertFrom-Json).Domain.Name } catch { }
-                }
-                $deployed = "\\$dom\NETLOGON\Install-StandardApps.ps1"
-                if ($dom -and (Test-Path $deployed)) {
-                    Write-Host "  Running $deployed ..." -ForegroundColor Cyan
-                    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $deployed
-                    Write-Host "  Done. Details in C:\ProgramData\Domech\AppInstall.log" -ForegroundColor Gray
-                } else {
-                    Write-Host "  Not published yet at $deployed - run option 12 on the server first." -ForegroundColor Red
-                }
-            }
+            # Runs the copy in this folder with the app list read from the local
+            # config.json, so it works whether or not the server deployment has
+            # ever succeeded. -Now skips the once-a-day guard, which a manual
+            # request should obviously ignore.
+            Write-Host "  Installing the standard apps on THIS PC. Microsoft 365 is large - this can take a while." -ForegroundColor Cyan
+            Invoke-Toolkit 'scripts\New\Workstation\Install-StandardApps.ps1' -Arguments @('-Now') -NeedsElevation
+            Write-Host "  Details logged to C:\ProgramData\Domech\AppInstall.log" -ForegroundColor Gray
         }
         '19' {
-            if (-not $elevated) {
-                Write-Host "  Needs an elevated window. Close this, open PowerShell as Administrator, and type: domech" -ForegroundColor Red
-            } else {
-                $pc = Read-Host "  Which PC? (e.g. SUPRIYA-DF)"
-                if ($pc) {
-                    $prn = Read-Host "  Printer name to share (press Enter to just list what is on that PC)"
-                    $shareArgs = @('-ComputerName', $pc)
-                    if ($prn) {
-                        $shr = Read-Host "  Share name (e.g. CanonSupriya - must match config.json)"
-                        $shareArgs += @('-PrinterName', $prn)
-                        if ($shr) { $shareArgs += @('-ShareName', $shr) }
-                    }
-                    Invoke-Toolkit 'scripts\New\Server\Share-WorkstationPrinter.ps1' -Arguments $shareArgs
+            $pc = Read-Host "  Which PC? (e.g. SUPRIYA-DF)"
+            if ($pc) {
+                $prn = Read-Host "  Printer name to share (press Enter to just list what is on that PC)"
+                $shareArgs = @('-ComputerName', $pc)
+                if ($prn) {
+                    $shr = Read-Host "  Share name (e.g. CanonSupriya - must match config.json)"
+                    $shareArgs += @('-PrinterName', $prn)
+                    if ($shr) { $shareArgs += @('-ShareName', $shr) }
                 }
+                Invoke-Toolkit 'scripts\New\Server\Share-WorkstationPrinter.ps1' -Arguments $shareArgs -NeedsElevation
             }
         }
         '0'  { return }

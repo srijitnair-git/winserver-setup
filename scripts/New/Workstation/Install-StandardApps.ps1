@@ -19,9 +19,32 @@ Runs at most once per day. A startup script that reinstalls the whole app set
 on every boot would make every restart slow for no benefit.
 #>
 
+param(
+    # Ignore the once-a-day guard. Used when someone deliberately asks for an
+    # install now rather than waiting for the next startup or logon.
+    [switch]$Now
+)
+
 $AppIds = @(
     "__WINGET_APPS_PLACEHOLDER__"
 )
+
+# Run straight from the toolkit folder rather than the deployed copy, the
+# placeholder above is still a placeholder - the list is only baked in at
+# deploy time. Fall back to reading config.json so this works on a machine
+# whether or not the server deployment has ever succeeded.
+if ($AppIds -contains "__WINGET_APPS_PLACEHOLDER__") {
+    $cfgPath = "C:\01_matrix\config.json"
+    if (Test-Path $cfgPath) {
+        try {
+            $AppIds = (Get-Content $cfgPath -Raw | ConvertFrom-Json).WingetApps
+        } catch {
+            $AppIds = @()
+        }
+    } else {
+        $AppIds = @()
+    }
+}
 
 $localDir  = "C:\ProgramData\Domech"
 $logPath   = Join-Path $localDir "AppInstall.log"
@@ -47,8 +70,8 @@ if (-not $isElevated) {
     return
 }
 
-# ---- once a day is enough ----
-if (Test-Path $stampPath) {
+# ---- once a day is enough, unless asked for now ----
+if (-not $Now -and (Test-Path $stampPath)) {
     $last = (Get-Item $stampPath).LastWriteTime
     if ((Get-Date) - $last -lt [TimeSpan]::FromHours(20)) {
         Write-Log "Last run was $last - skipping (runs at most once per day)."
@@ -56,7 +79,13 @@ if (Test-Path $stampPath) {
     }
 }
 
-Write-Log "--- App install/update starting on $env:COMPUTERNAME ---"
+if (-not $AppIds -or $AppIds.Count -eq 0) {
+    Write-Log "No app list available - neither baked in at deploy time nor readable from C:\01_matrix\config.json."
+    Write-Host "No app list found. Run the toolkit URL on this PC first so config.json is present." -ForegroundColor Red
+    return
+}
+
+Write-Log "--- App install/update starting on $env:COMPUTERNAME ($($AppIds.Count) apps) ---"
 
 # ---- find winget ----
 # Three ways, because none is reliable on its own:
