@@ -26,9 +26,20 @@ Write-Host ""
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "  Domech toolkit" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
-Write-Host "  Machine  : $env:COMPUTERNAME"
+# Say plainly whether this is the server. The server options and the per-PC
+# options look alike in a list, and running a server option on a staff PC fails
+# in a way that reads like a broken toolkit rather than the wrong machine.
+$domainRole = try { (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).DomainRole } catch { -1 }
+$isServer = $domainRole -in @(4, 5)
+
+Write-Host "  Machine  : $env:COMPUTERNAME  $(if ($isServer) { '[THE SERVER]' } else { '[a workstation]' })" -ForegroundColor $(if ($isServer) { 'Green' } else { 'Cyan' })
 Write-Host "  Signed in: $env:USERDOMAIN\$env:USERNAME"
 Write-Host "  Elevated : $elevated"
+if (-not $isServer) {
+    Write-Host ""
+    Write-Host "  This is not the domain controller, so the SERVER options below will not" -ForegroundColor Yellow
+    Write-Host "  work here. On this machine use: 8, 9, 10, 16, 17, 18, 22, 23, 25, 26" -ForegroundColor Yellow
+}
 if (-not $elevated) {
     Write-Host ""
     Write-Host "  Not elevated. Server options will each open a separate window to ask for" -ForegroundColor Yellow

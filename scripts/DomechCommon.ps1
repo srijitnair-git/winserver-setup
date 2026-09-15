@@ -119,12 +119,32 @@ function Assert-DomechAD {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
     } catch {
-        Write-DomechLog "The ActiveDirectory PowerShell module could not be loaded. Nothing has been changed." -Level Error
-        Write-DomechLog "  Reason: $($_.Exception.Message)" -Level Error
-        Write-DomechLog "  PowerShell $($PSVersionTable.PSVersion), 64-bit process: $([Environment]::Is64BitProcess)" -Level Info
-        Write-DomechLog "  On the domain controller, install it once with:" -Level Warning
-        Write-DomechLog "      Install-WindowsFeature RSAT-AD-PowerShell" -Level Warning
-        Write-DomechLog "  then run this again." -Level Warning
+        # Work out WHY before advising anything. On a staff PC the module is
+        # simply absent and always will be - telling someone to install server
+        # tools on a workstation sends them down completely the wrong path.
+        # DomainRole 4 or 5 means this machine is a domain controller.
+        $role = try { (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).DomainRole } catch { -1 }
+        $isDC = $role -in @(4, 5)
+
+        Write-DomechLog "" -Level Info
+        if (-not $isDC) {
+            Write-DomechLog "THIS IS NOT THE SERVER. Nothing has been changed." -Level Error
+            Write-DomechLog "" -Level Info
+            Write-DomechLog "  This machine is $env:COMPUTERNAME, which is a workstation." -Level Error
+            Write-DomechLog "  This option only works on the domain controller, because that is the" -Level Error
+            Write-DomechLog "  only machine with the Active Directory tools." -Level Error
+            Write-DomechLog "" -Level Info
+            Write-DomechLog "  Run it on the server instead. Do NOT install server tools here." -Level Warning
+            Write-DomechLog "" -Level Info
+            Write-DomechLog "  Options that work on THIS machine: 8, 9, 10, 16, 17, 18, 22, 23, 25, 26" -Level Warning
+        } else {
+            Write-DomechLog "The ActiveDirectory PowerShell module could not be loaded. Nothing has been changed." -Level Error
+            Write-DomechLog "  Reason: $($_.Exception.Message)" -Level Error
+            Write-DomechLog "  PowerShell $($PSVersionTable.PSVersion), 64-bit process: $([Environment]::Is64BitProcess)" -Level Info
+            Write-DomechLog "  This IS the domain controller, so the tools should be here. Install them once with:" -Level Warning
+            Write-DomechLog "      Install-WindowsFeature RSAT-AD-PowerShell" -Level Warning
+            Write-DomechLog "  then run this again." -Level Warning
+        }
         exit 1
     }
     if (-not (Get-Command Get-ADDomain -ErrorAction SilentlyContinue)) {
