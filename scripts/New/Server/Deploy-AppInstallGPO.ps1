@@ -34,7 +34,19 @@ Write-DomechLog "Deploying $($apps.Count) app(s): $($apps -join ', ')" -Level In
 
 $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
 if (-not $gpo) { $gpo = New-GPO -Name $GpoName }
-New-GPLink -Name $GpoName -Target $domainDN -ErrorAction SilentlyContinue | Out-Null
+
+# Link to the workstations OU, NOT the domain root. A domain-root link would
+# include the Domain Controllers OU and install Chrome, VLC and the rest onto
+# the server itself - which is exactly what Deploy-StandardBaseline.ps1 warns
+# against. Fall back to the domain root only if that OU is missing, and say so.
+$linkTarget = $Config.Paths.ComputersOU
+if (-not $linkTarget -or -not (Get-ADOrganizationalUnit -Identity $linkTarget -ErrorAction SilentlyContinue)) {
+    Write-DomechLog "Workstations OU '$linkTarget' not found - linking at the domain root instead. Check that the server does not pick up these apps." -Level Warning
+    $linkTarget = $domainDN
+} else {
+    Write-DomechLog "Linking to $linkTarget (workstations only - the domain controller is deliberately excluded)." -Level Info
+}
+New-GPLink -Name $GpoName -Target $linkTarget -ErrorAction SilentlyContinue | Out-Null
 
 # Build the deployable copy with the app list baked in. Rebuilt from source
 # every run rather than appended to, so rerunning after a config.json edit

@@ -44,13 +44,37 @@ if (Test-Path $stampPath) {
 Write-Log "--- App install/update starting on $env:COMPUTERNAME ---"
 
 # ---- find winget ----
-$wingetExe = Get-ChildItem "$env:ProgramFiles\WindowsApps" -Filter "winget.exe" -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -like "*Microsoft.DesktopAppInstaller*" } |
-    Sort-Object FullName -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
+# Three ways, because none is reliable on its own:
+#  1. on PATH - true for an interactive user, never for SYSTEM
+#  2. the package's own InstallLocation - the documented way, and the one that
+#     works in SYSTEM context
+#  3. scanning WindowsApps - last resort. That folder is ACL'd to
+#     TrustedInstaller and is not even enumerable by a normal admin, though
+#     SYSTEM can usually read it.
+$wingetExe = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
 
 if (-not $wingetExe) {
-    Write-Log "winget not found on this machine. Install 'App Installer' from the Microsoft Store once, then this will start working."
+    try {
+        $pkg = Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller" -ErrorAction Stop |
+            Sort-Object Version -Descending | Select-Object -First 1
+        if ($pkg -and $pkg.InstallLocation) {
+            $candidate = Join-Path $pkg.InstallLocation "winget.exe"
+            if (Test-Path $candidate) { $wingetExe = $candidate }
+        }
+    } catch {
+        Write-Log "Could not query App Installer package: $($_.Exception.Message)"
+    }
+}
+
+if (-not $wingetExe) {
+    $wingetExe = Get-ChildItem "$env:ProgramFiles\WindowsApps" -Filter "winget.exe" -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like "*Microsoft.DesktopAppInstaller*" } |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
+if (-not $wingetExe) {
+    Write-Log "winget not found on this machine. It ships with Windows 11; on older builds install 'App Installer' from the Microsoft Store once, then this starts working by itself."
     return
 }
 Write-Log "Using winget at $wingetExe"

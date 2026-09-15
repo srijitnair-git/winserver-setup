@@ -60,13 +60,23 @@ $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(2
 $g.DrawString("$displayName,", $font, $brush, [float]$nameX, [float]$nameY)
 $g.Dispose()
 
+# Fit the splash to this screen. The artwork is 1920x1080; on a smaller
+# display (the laptop) a form that size hangs off the edges and the card gets
+# cut off, so scale down proportionally when it doesn't fit. WorkingArea
+# rather than Bounds, so it never covers the taskbar.
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$scale  = [Math]::Min(1.0, [Math]::Min($screen.Width / $canvas.Width, $screen.Height / $canvas.Height))
+
 $form = New-Object System.Windows.Forms.Form
 $form.FormBorderStyle = 'None'
 $form.StartPosition   = 'CenterScreen'
 $form.TopMost         = $true
-$form.ClientSize      = New-Object System.Drawing.Size($canvas.Width, $canvas.Height)
+# The artwork's margins are transparent. Without this they render as the
+# default grey control colour instead of blending into the white card.
+$form.BackColor       = [System.Drawing.Color]::White
+$form.ClientSize      = New-Object System.Drawing.Size([int]($canvas.Width * $scale), [int]($canvas.Height * $scale))
 $form.BackgroundImage = $canvas
-$form.BackgroundImageLayout = 'Stretch'
+$form.BackgroundImageLayout = 'Zoom'   # Zoom keeps the aspect ratio; Stretch distorted it
 
 $form.Add_Click({ $form.Close() })
 $timer = New-Object System.Windows.Forms.Timer

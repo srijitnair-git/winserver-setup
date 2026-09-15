@@ -559,10 +559,12 @@ if (Test-Path $SplashPng) {
 
     $userScriptsPath = "\\$domain\SYSVOL\$domain\Policies\{$($gpo.Id)}\User\Scripts"
     New-Item -ItemType Directory -Path $userScriptsPath -Force | Out-Null
+    # -WindowStyle Hidden, or a PowerShell console window flashes up on screen
+    # at every single login, behind the splash.
     @"
 [Logon]
 0CmdLine=powershell.exe
-0Parameters=-ExecutionPolicy Bypass -File \\$domain\NETLOGON\Show-LoginSplash.ps1
+0Parameters=-ExecutionPolicy Bypass -WindowStyle Hidden -File \\$domain\NETLOGON\Show-LoginSplash.ps1
 "@ | Out-File "$userScriptsPath\scripts.ini" -Encoding Unicode
 
     $scriptsExtensionPair = "[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]"
