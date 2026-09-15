@@ -29,6 +29,15 @@ Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "  Machine  : $env:COMPUTERNAME"
 Write-Host "  Signed in: $env:USERDOMAIN\$env:USERNAME"
 Write-Host "  Elevated : $elevated"
+if (-not $elevated) {
+    Write-Host ""
+    Write-Host "  Not elevated. Server options will each open a separate window to ask for" -ForegroundColor Yellow
+    Write-Host "  admin rights. On the SERVER it is easier to close this, right-click" -ForegroundColor Yellow
+    Write-Host "  PowerShell, Run as administrator, and run the link again - then everything" -ForegroundColor Yellow
+    Write-Host "  stays in one window." -ForegroundColor Yellow
+    Write-Host "  On a STAFF PC do NOT do that: options 8, 9, 10, 16, 17, 22 and 25 must run" -ForegroundColor Yellow
+    Write-Host "  as the person signed in, or they report on the wrong account." -ForegroundColor Yellow
+}
 Write-Host ""
 
 # ---------- download + install ----------
@@ -183,10 +192,15 @@ function Invoke-Toolkit {
         # the per-user repairs deliberately stay in the current account, since
         # elevating as somebody else would fix the wrong profile.
         Write-Host "  This needs administrator rights - approve the prompt." -ForegroundColor Yellow
-        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$full`"") + $Arguments
+        Write-Host "  It opens in a NEW window. Read it there, then close that window to come back." -ForegroundColor Yellow
+        # -NoExit, or the elevated window closes the moment the script ends and
+        # the output is gone before it can be read. Everything that needs admin
+        # rights runs in a separate window, so without this every one of those
+        # options just flashes on screen.
+        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit", "-File", "`"$full`"") + $Arguments
         try {
             Start-Process powershell.exe -Verb RunAs -ArgumentList $argList -Wait
-            Write-Host "  (ran in an elevated window)" -ForegroundColor Gray
+            Write-Host "  (that window has closed)" -ForegroundColor Gray
         } catch {
             Write-Host "  Elevation was refused or failed: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host "  If this PC is not yours to administer, an admin needs to run it." -ForegroundColor Red
