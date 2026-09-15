@@ -216,6 +216,7 @@ while ($true) {
     Write-Host "  11. Wallpaper, lock screen and login splash"
     Write-Host "  12. Install/update apps on every workstation"
     Write-Host "  20. Who has access to what - reports only, changes nothing"
+    Write-Host "  21. Check internet name lookups on the server (fixes DNS forwarding)"
     Write-Host "  13. Find printers on the network - reports only, changes nothing"
     Write-Host "  14. Install and share the network printer on this server"
     Write-Host "  15. Deploy printers to users (run 14 first)"
@@ -227,6 +228,8 @@ while ($true) {
     Write-Host "  18. Install/update the apps on THIS PC right now (no server setup needed)"
     Write-Host "  10. Diagnose drive mapping - writes a log, changes nothing"
     Write-Host "  16. Why haven't the apps installed on this PC? - reports only"
+    Write-Host "  22. Check this PC's network - reports only, changes nothing"
+    Write-Host "  23. Set this PC's static IP from config.json"
     Write-Host ""
     Write-Host "  PRINTERS ON A WORKSTATION (run from the server)" -ForegroundColor Cyan
     Write-Host "  19. List / share a USB printer on someone's PC"
@@ -254,6 +257,9 @@ while ($true) {
         '16' { Invoke-Toolkit 'scripts\New\Workstation\Diagnose-AppInstall.ps1' }
         '17' { Invoke-Toolkit 'scripts\Repair-StartMenu.ps1' }
         '20' { Invoke-Toolkit 'scripts\New\Server\Show-AccessAudit.ps1'            -NeedsElevation }
+        '21' { Invoke-Toolkit 'scripts\New\Server\Repair-DnsForwarding.ps1'        -NeedsElevation }
+        '22' { Invoke-Toolkit 'scripts\New\Workstation\Test-NetworkHealth.ps1' }
+        '23' { Invoke-Toolkit 'scripts\New\Workstation\Set-StaticIP.ps1'           -NeedsElevation }
         '18' {
             # Runs the copy in this folder with the app list read from the local
             # config.json, so it works whether or not the server deployment has
